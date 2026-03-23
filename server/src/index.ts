@@ -35,6 +35,10 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   return response.status(500).json({ message: "Unexpected server error." });
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Server listening on http://localhost:${port}`);
+  });
+}
+
+export default app;

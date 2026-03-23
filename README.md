@@ -31,3 +31,23 @@ Local AI-powered study guide and flashcard generator built with React, Node.js, 
 - PDF uploads are sent to Gemini as inline file data.
 - Generated study sets are currently stored in `server/src/data/studySets.json` so the app works immediately in this environment.
 - Prisma schema and client generation are set up, but local SQLite initialization hit a Prisma schema-engine error on this machine, so the runtime persistence path currently uses JSON storage.
+
+## Vercel Deployment
+
+Deploy this repo as two Vercel projects from the same monorepo:
+
+1. Frontend project
+   - Root directory: `client`
+   - Environment variable: `VITE_API_BASE_URL=https://your-server-project.vercel.app/api`
+
+2. Backend project
+   - Root directory: `server`
+   - Environment variables:
+     - `GEMINI_API_KEY`
+     - `GEMINI_MODEL=gemini-2.5-flash`
+     - `CLIENT_ORIGIN=https://your-frontend-project.vercel.app`
+     - `PORT=4000`
+
+The backend exports the Express app for Vercel while still supporting local development. The frontend reads its API base URL from `VITE_API_BASE_URL` in production and falls back to `http://localhost:4000/api` locally.
+
+Important: the current saved-study-set store writes to a local JSON file. That works locally, but Vercel serverless functions do not provide durable filesystem persistence. For production persistence, move study set storage to a hosted database or object store before relying on saved data.

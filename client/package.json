@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build"
+    "build": "npm run build --workspace @automated-study-system/shared --prefix .. && tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
     "@automated-study-system/shared": "0.1.0",
