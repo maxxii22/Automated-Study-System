@@ -6,25 +6,50 @@ import type {
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "/api" : "http://localhost:4000/api");
+const STUDY_SET_STORAGE_KEY = "study-sphere.study-sets";
 
-export async function fetchStudySets(): Promise<StudySet[]> {
-  const response = await fetch(`${API_BASE_URL}/study-sets`);
+function canUseStorage() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
 
-  if (!response.ok) {
-    throw new Error("Failed to load study sets.");
+function readStoredStudySets(): StudySet[] {
+  if (!canUseStorage()) {
+    return [];
   }
 
-  return response.json() as Promise<StudySet[]>;
+  const raw = window.localStorage.getItem(STUDY_SET_STORAGE_KEY);
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(raw) as StudySet[];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredStudySets(studySets: StudySet[]) {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(STUDY_SET_STORAGE_KEY, JSON.stringify(studySets));
+}
+
+export async function fetchStudySets(): Promise<StudySet[]> {
+  return readStoredStudySets().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export async function fetchStudySet(id: string): Promise<StudySet> {
-  const response = await fetch(`${API_BASE_URL}/study-sets/${id}`);
+  const studySet = readStoredStudySets().find((item) => item.id === id);
 
-  if (!response.ok) {
-    throw new Error("Failed to load study set.");
+  if (!studySet) {
+    throw new Error("Study set not found on this device.");
   }
 
-  return response.json() as Promise<StudySet>;
+  return studySet;
 }
 
 export async function generateStudySet(
@@ -53,20 +78,30 @@ export async function generateStudySet(
 export async function saveStudySet(
   payload: GenerateStudySetRequest & GenerateStudySetResponse
 ): Promise<StudySet> {
-  const response = await fetch(`${API_BASE_URL}/study-sets`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  const studySets = readStoredStudySets();
+  const timestamp = new Date().toISOString();
 
-  if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(error?.message ?? "Failed to save study set.");
-  }
+  const studySet: StudySet = {
+    id: crypto.randomUUID(),
+    title: payload.title,
+    sourceText: payload.sourceText ?? "",
+    sourceType: payload.sourceType,
+    sourceFileName: payload.sourceFileName,
+    summary: payload.summary,
+    studyGuide: payload.studyGuide,
+    keyConcepts: payload.keyConcepts,
+    flashcards: payload.flashcards.map((card, index) => ({
+      id: crypto.randomUUID(),
+      question: card.question,
+      answer: card.answer,
+      order: card.order ?? index + 1
+    })),
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
 
-  return response.json() as Promise<StudySet>;
+  writeStoredStudySets([studySet, ...studySets]);
+  return studySet;
 }
 
 async function sendPdfGenerationRequest(
