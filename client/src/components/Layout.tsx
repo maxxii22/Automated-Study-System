@@ -1,6 +1,8 @@
 import type { PropsWithChildren } from "react";
 import { Link, useLocation } from "react-router-dom";
 
+import { StudySphereLogo } from "./StudySphereLogo";
+
 export function Layout({ children }: PropsWithChildren) {
   const location = useLocation();
 
@@ -8,7 +10,8 @@ export function Layout({ children }: PropsWithChildren) {
     <div className="shell">
       <header className="topbar">
         <Link className="brand" to="/">
-          Automated Study Systems
+          <StudySphereLogo compact />
+          <span className="brand-label">Study Sphere</span>
         </Link>
         <nav className="nav">
           <Link className={location.pathname === "/" ? "nav-link active" : "nav-link"} to="/">

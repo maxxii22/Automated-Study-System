@@ -53,8 +53,15 @@ pre {
 }
 
 .brand {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-label {
+  font-size: 1.15rem;
   font-weight: 700;
+  color: #eef4ff;
 }
 
 .nav {
@@ -131,16 +138,46 @@ pre {
   padding: 28px;
 }
 
-.hero-icon {
-  width: 56px;
-  height: 56px;
-  display: grid;
-  place-items: center;
+.study-sphere-logo {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.study-sphere-logo.compact {
+  margin-bottom: 0;
+}
+
+.study-sphere-logo-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 150px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(180deg, #f8fbff, #e8eef5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 20px 40px rgba(0, 0, 0, 0.16);
+}
+
+.study-sphere-logo.compact .study-sphere-logo-stage {
+  width: 44px;
   border-radius: 16px;
-  margin-bottom: 48px;
-  background: linear-gradient(180deg, rgba(43, 81, 177, 0.7), rgba(18, 34, 73, 0.95));
-  color: #89b1ff;
-  font-weight: 700;
+}
+
+.study-sphere-mark {
+  width: 100%;
+  height: 100%;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: cover;
+  object-position: center 72%;
+}
+
+.study-sphere-logo.compact .study-sphere-mark {
+  object-position: center 74%;
 }
 
 .eyebrow {

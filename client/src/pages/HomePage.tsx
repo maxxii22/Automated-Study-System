@@ -18,11 +18,11 @@ export function HomePage() {
     <section className="hero-grid">
       <div>
         <article className="hero-card">
-          <div className="hero-icon">{">_"}</div>
           <p className="eyebrow">React • Node.js • Gemini API</p>
-          <h1>Automated Study Systems</h1>
+          <h1>Study Sphere</h1>
           <p className="hero-copy">
-            AI-powered application generating structured study guides and active-recall flashcards from notes.
+            Automated learning environment for generating structured study guides and active-recall flashcards from
+            notes and PDFs.
           </p>
           <div className="chip-row">
             <span className="chip">React</span>
