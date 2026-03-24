@@ -270,6 +270,13 @@ pre {
   min-width: 0;
 }
 
+.recent-item-content p,
+.recent-item-content strong,
+.recent-item-content span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .recent-item-actions {
   display: flex;
   flex-direction: column;
