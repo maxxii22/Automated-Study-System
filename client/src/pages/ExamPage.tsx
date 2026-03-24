@@ -123,7 +123,7 @@ export function ExamPage() {
             <p className="eyebrow">Adaptive Oral Exam</p>
             <h1>{studySet.title}</h1>
           </div>
-          <Link className="nav-link" to={`/study-sets/${studySet.id}`}>
+          <Link className="secondary-button" to={`/study-sets/${studySet.id}`}>
             Back to Set
           </Link>
         </div>
@@ -222,7 +222,7 @@ export function ExamPage() {
           </div>
         </section>
 
-        <button className="nav-link" onClick={() => navigate(`/study-sets/${studySet.id}`)} type="button">
+        <button className="secondary-button" onClick={() => navigate(`/study-sets/${studySet.id}`)} type="button">
           Return to Study Set
         </button>
       </article>

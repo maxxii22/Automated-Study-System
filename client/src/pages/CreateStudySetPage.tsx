@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import type { GenerateStudySetResponse } from "@automated-study-system/shared";
 
+import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
 import { generateStudySet, saveStudySet } from "../lib/api";
 
 const starterText = `Photosynthesis is the process by which green plants use sunlight, water, and carbon dioxide to produce glucose and oxygen. Chlorophyll in the chloroplast absorbs light energy, which powers the chemical reactions needed for this conversion.`;
@@ -192,7 +193,7 @@ export function CreateStudySetPage() {
 
             <section className="result-block">
               <h3>Study Guide</h3>
-              <pre>{result.studyGuide}</pre>
+              <StudyGuideRenderer content={result.studyGuide} />
             </section>
 
             <section className="result-block">

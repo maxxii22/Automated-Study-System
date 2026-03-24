@@ -137,6 +137,14 @@ export async function saveStudySet(
   return studySet;
 }
 
+export async function deleteStudySet(id: string): Promise<void> {
+  const studySets = readStoredStudySets();
+  writeStoredStudySets(studySets.filter((studySet) => studySet.id !== id));
+
+  const sessions = readStoredExamSessions();
+  writeStoredExamSessions(sessions.filter((session) => session.studySetId !== id));
+}
+
 export async function evaluateExamTurn(
   payload: EvaluateExamTurnRequest
 ): Promise<EvaluateExamTurnResponse> {

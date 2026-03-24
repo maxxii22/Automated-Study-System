@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import type { StudySet } from "@automated-study-system/shared";
 
+import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
 import { fetchStudySet, listExamSessions } from "../lib/api";
 
 export function StudySetPage() {
@@ -67,7 +68,7 @@ export function StudySetPage() {
         </section>
         <section className="result-block">
           <h3>Study Guide</h3>
-          <pre>{studySet.studyGuide}</pre>
+          <StudyGuideRenderer content={studySet.studyGuide} />
         </section>
       </article>
 

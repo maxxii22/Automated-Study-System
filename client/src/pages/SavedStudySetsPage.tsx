@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import type { StudySet } from "@automated-study-system/shared";
 
-import { fetchStudySets } from "../lib/api";
+import { deleteStudySet, fetchStudySets } from "../lib/api";
 
 export function SavedStudySetsPage() {
+  const navigate = useNavigate();
   const [studySets, setStudySets] = useState<StudySet[]>([]);
+  const [studySetPendingDelete, setStudySetPendingDelete] = useState<StudySet | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,6 +35,22 @@ export function SavedStudySetsPage() {
     return <section className="panel">{error}</section>;
   }
 
+  function promptDelete(event: React.MouseEvent<HTMLButtonElement>, studySet: StudySet) {
+    event.preventDefault();
+    event.stopPropagation();
+    setStudySetPendingDelete(studySet);
+  }
+
+  async function confirmDelete() {
+    if (!studySetPendingDelete) {
+      return;
+    }
+
+    await deleteStudySet(studySetPendingDelete.id);
+    setStudySets((current) => current.filter((studySet) => studySet.id !== studySetPendingDelete.id));
+    setStudySetPendingDelete(null);
+  }
+
   return (
     <section className="panel recent-panel">
       <div className="section-header">
@@ -50,7 +68,19 @@ export function SavedStudySetsPage() {
       ) : (
         <div className="recent-list">
           {studySets.map((studySet) => (
-            <Link className="recent-item" key={studySet.id} to={`/study-sets/${studySet.id}`}>
+            <article
+              className="recent-item"
+              key={studySet.id}
+              onClick={() => navigate(`/study-sets/${studySet.id}`)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  navigate(`/study-sets/${studySet.id}`);
+                }
+              }}
+              role="link"
+              tabIndex={0}
+            >
               <div className="recent-item-content">
                 <strong className="recent-item-title">{studySet.title}</strong>
                 <p className="muted">
@@ -60,11 +90,46 @@ export function SavedStudySetsPage() {
                 </p>
                 <p className="muted">{studySet.summary}</p>
               </div>
-              <span className="recent-item-action">Open Set</span>
-            </Link>
+              <div className="recent-item-actions">
+                <Link
+                  className="recent-item-action"
+                  onClick={(event) => event.stopPropagation()}
+                  to={`/study-sets/${studySet.id}`}
+                >
+                  Open Set
+                </Link>
+                <button className="danger-button" onClick={(event) => promptDelete(event, studySet)} type="button">
+                  Delete Set
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       )}
+
+      {studySetPendingDelete ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setStudySetPendingDelete(null)}>
+          <div className="content-modal confirm-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="content-modal-header">
+              <div>
+                <h2>Delete study set?</h2>
+                <p className="muted">
+                  This will remove <strong>{studySetPendingDelete.title}</strong> and its saved exam sessions from this device.
+                </p>
+              </div>
+            </div>
+
+            <div className="content-modal-actions confirm-actions">
+              <button className="secondary-button" onClick={() => setStudySetPendingDelete(null)} type="button">
+                Cancel
+              </button>
+              <button className="danger-button" onClick={() => void confirmDelete()} type="button">
+                Delete Set
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
