@@ -39,12 +39,12 @@ export async function generateStudySetController(request: Request, response: Res
       return response.status(200).json(studyPack);
     }
 
-    const sourceText = z.string().min(50).max(30000).safeParse(request.body.sourceText);
+    const sourceText = z.string().trim().min(1).max(30000).safeParse(request.body.sourceText);
 
     if (!sourceText.success) {
       return response.status(400).json({
         message: "Invalid study set payload.",
-        issues: { fieldErrors: { sourceText: ["Source text must be between 50 and 30000 characters."] } }
+        issues: { fieldErrors: { sourceText: ["Add a link or pasted text before generating."] } }
       });
     }
 

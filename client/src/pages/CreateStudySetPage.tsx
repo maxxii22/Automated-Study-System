@@ -17,6 +17,48 @@ function formatPdfTitle(fileName: string) {
     .trim();
 }
 
+function deriveTitleFromContent(title: string, sourceUrl: string, sourceText: string, sourceFile: File | null) {
+  if (title.trim()) {
+    return title.trim();
+  }
+
+  if (sourceFile) {
+    return formatPdfTitle(sourceFile.name);
+  }
+
+  if (sourceUrl.trim()) {
+    try {
+      const parsed = new URL(sourceUrl.trim());
+      const lastSegment = parsed.pathname.split("/").filter(Boolean).at(-1);
+      const isOpaqueVideoId = Boolean(lastSegment && /^[A-Za-z0-9_-]{8,20}$/.test(lastSegment));
+      const fromPath = isOpaqueVideoId ? "" : lastSegment?.replace(/[_-]+/g, " ").trim();
+
+      if (fromPath) {
+        return fromPath;
+      }
+
+      if (parsed.hostname.includes("youtube.com") || parsed.hostname.includes("youtu.be")) {
+        return "YouTube Study Set";
+      }
+
+      return parsed.hostname.replace(/^www\./, "");
+    } catch {
+      return sourceUrl.trim().replace(/^https?:\/\//, "").slice(0, 60);
+    }
+  }
+
+  if (sourceText.trim()) {
+    return sourceText
+      .trim()
+      .replace(/\s+/g, " ")
+      .split(" ")
+      .slice(0, 6)
+      .join(" ");
+  }
+
+  return "";
+}
+
 export function CreateStudySetPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
@@ -36,8 +78,17 @@ export function CreateStudySetPage() {
     setIsSubmitting(true);
 
     try {
+      const derivedTitle = deriveTitleFromContent(title, sourceUrl, sourceText, sourceFile);
       const combinedSourceText =
         sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
+
+      if (!derivedTitle) {
+        throw new Error("Add a title, link, text, or PDF before generating.");
+      }
+
+      if (sourceType === "text" && !sourceText.trim() && sourceUrl.trim()) {
+        throw new Error("Link-only generation is not supported yet. Paste the transcript or page text along with the link.");
+      }
 
       if (sourceType === "text" && !combinedSourceText.trim()) {
         throw new Error("Add a link or paste text before generating.");
@@ -47,18 +98,19 @@ export function CreateStudySetPage() {
         sourceType === "pdf"
           ? await generateStudySet(
               {
-                title,
+                title: derivedTitle,
                 sourceType: "pdf",
                 sourceFileName: sourceFile?.name
               },
               sourceFile
             )
           : await generateStudySet({
-              title,
+              title: derivedTitle,
               sourceType: "text",
               sourceText: combinedSourceText
             });
 
+      setTitle(derivedTitle);
       setResult(generated);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Something went wrong.");
@@ -76,6 +128,7 @@ export function CreateStudySetPage() {
     setError(null);
 
     try {
+      const derivedTitle = deriveTitleFromContent(title, sourceUrl, sourceText, sourceFile);
       const saved = await saveStudySet({
         sourceText:
           sourceType === "pdf"
@@ -146,6 +199,11 @@ export function CreateStudySetPage() {
                   ? `${Math.min(sourceText.length, 240)} characters of pasted text ready for generation.`
                   : "No pasted text yet. Add website text, a YouTube transcript, or your notes."}
               </p>
+              {sourceUrl && !sourceText ? (
+                <p className="error-text content-warning">
+                  A link alone is only stored as a reference. Paste the actual transcript or page text before generating.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -254,6 +312,9 @@ export function CreateStudySetPage() {
                 value={sourceUrl}
                 onChange={(event) => setSourceUrl(event.target.value)}
               />
+              <p className="muted small-copy">
+                The link is saved as a reference. For accurate study generation, also paste the transcript or page text below.
+              </p>
             </div>
 
             <div className="content-modal-divider">
