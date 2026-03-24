@@ -425,6 +425,13 @@ h1 {
   word-break: break-word;
 }
 
+.study-page .muted,
+.study-page p,
+.study-page .chip {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .exam-page h1,
 .exam-page h2,
 .exam-page p,
@@ -616,6 +623,18 @@ h1 {
   transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
+.pdf-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pdf-file-trigger {
+  width: fit-content;
+}
+
 .content-trigger:hover {
   transform: translateY(-1px);
   border-color: rgba(140, 182, 255, 0.3);
@@ -743,13 +762,14 @@ h1 {
 }
 
 .file-pill {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
+  display: block;
+  width: 100%;
   padding: 10px 12px;
-  border-radius: 999px;
+  border-radius: 16px;
   background: rgba(19, 31, 58, 0.94);
   border: 1px solid rgba(243, 155, 104, 0.12);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .result-block {
@@ -932,6 +952,17 @@ h1 {
   .recent-item:hover .recent-item-action {
     transform: none;
   }
+
+  .study-page .chip-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .study-page .primary-button,
+  .study-page .chip {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 560px) {
@@ -961,6 +992,16 @@ h1 {
     line-height: 1.02;
   }
 
+  .study-page h1 {
+    font-size: 2.2rem;
+    line-height: 1.05;
+  }
+
+  .study-page .panel {
+    padding: 22px;
+    min-height: 0;
+  }
+
   .recent-item-title {
     font-size: 1rem;
     line-height: 1.25;
@@ -969,5 +1010,13 @@ h1 {
   .recent-item .muted {
     font-size: 0.95rem;
     line-height: 1.55;
+  }
+
+  .study-guide-list {
+    padding-left: 18px;
+  }
+
+  .study-guide-item {
+    padding: 14px 14px;
   }
 }

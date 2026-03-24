@@ -12,9 +12,12 @@ const starterTitle = "Photosynthesis Basics";
 function formatPdfTitle(fileName: string) {
   return fileName
     .replace(/\.pdf$/i, "")
+    .replace(/^.*?(?=[A-Za-z])/, "")
+    .replace(/\b(?:oceanofpdf\.com|oceanofpdf|www)\b/gi, "")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .slice(0, 70);
 }
 
 function deriveTitleFromContent(title: string, sourceUrl: string, sourceText: string, sourceFile: File | null) {
@@ -210,22 +213,30 @@ export function CreateStudySetPage() {
           <div className="field">
             <label htmlFor="sourceFile">PDF Document</label>
             <input
+              className="pdf-file-input"
               id="sourceFile"
               type="file"
               accept="application/pdf,.pdf"
               onChange={(event) => {
                 const selectedFile = event.target.files?.[0] ?? null;
                 setSourceFile(selectedFile);
-
-                if (selectedFile && !title.trim()) {
-                  setTitle(formatPdfTitle(selectedFile.name));
-                }
               }}
             />
+            <label className="content-trigger pdf-file-trigger" htmlFor="sourceFile">
+              {sourceFile ? "Choose a different PDF" : "Choose PDF"}
+            </label>
             <p className="muted small-copy">
               Upload lecture notes, textbook sections, or class handouts as a PDF up to 10 MB.
             </p>
-            {sourceFile ? <p className="file-pill">Selected: {sourceFile.name}</p> : null}
+            {sourceFile ? (
+              <div className="content-preview">
+                <p className="muted small-copy">Selected PDF:</p>
+                <p className="file-pill">{sourceFile.name}</p>
+                {!title.trim() ? (
+                  <p className="muted small-copy">Suggested title: {formatPdfTitle(sourceFile.name)}</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
 
