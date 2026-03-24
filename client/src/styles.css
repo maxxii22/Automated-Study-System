@@ -925,6 +925,13 @@ h1 {
     padding: 12px 0 20px;
   }
 
+  .landing-shell {
+    width: 100vw;
+    max-width: none;
+    margin-left: calc(50% - 50vw);
+    padding: 0;
+  }
+
   .topbar {
     gap: 12px;
   }
