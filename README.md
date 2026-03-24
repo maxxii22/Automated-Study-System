@@ -26,10 +26,12 @@ Local AI-powered study guide and flashcard generator built with React, Node.js, 
 ## Current State
 
 - The frontend supports landing, create, generate, save, and study-set detail views, including PDF upload on the create screen.
+- The frontend supports landing, create, generate, save, study-set detail views, and a dedicated Adaptive Oral Exam Mode.
 - The backend exposes `GET /api/health`, `GET /api/study-sets`, `GET /api/study-sets/:id`, `POST /api/study-sets/generate`, and `POST /api/study-sets`.
+- The backend also exposes `POST /api/study-sets/exam-turn` for adaptive exam scoring and follow-up question generation.
 - Study generation now uses the Gemini API from the backend.
 - PDF uploads are sent to Gemini as inline file data.
-- Generated study sets are currently stored in `server/src/data/studySets.json` so the app works immediately in this environment.
+- Saved study sets and exam sessions are currently stored in browser-local storage for per-device privacy.
 - Prisma schema and client generation are set up, but local SQLite initialization hit a Prisma schema-engine error on this machine, so the runtime persistence path currently uses JSON storage.
 
 ## Vercel Deployment

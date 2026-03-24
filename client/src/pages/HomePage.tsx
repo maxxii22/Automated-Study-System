@@ -1,67 +1,34 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
 
-import type { StudySet } from "@automated-study-system/shared";
-
-import { fetchStudySets } from "../lib/api";
+import landingImage from "../assets/landing/landingimagepage.png";
 
 export function HomePage() {
-  const [studySets, setStudySets] = useState<StudySet[]>([]);
-
-  useEffect(() => {
-    fetchStudySets().then(setStudySets).catch(() => {
-      setStudySets([]);
-    });
-  }, []);
-
   return (
-    <section className="hero-grid">
-      <div>
-        <article className="hero-card">
-          <p className="eyebrow">React • Node.js • Gemini API</p>
-          <h1>Study Sphere</h1>
-          <p className="hero-copy">
-            Automated learning environment for generating structured study guides and active-recall flashcards from
-            notes and PDFs.
-          </p>
-          <div className="chip-row">
-            <span className="chip">React</span>
-            <span className="chip">Node.js</span>
-            <span className="chip">Gemini API</span>
-          </div>
+    <section
+      className="landing-page landing-page-full"
+      style={{ backgroundImage: `linear-gradient(90deg, rgba(5, 10, 21, 0.86) 0%, rgba(6, 12, 25, 0.58) 34%, rgba(7, 14, 28, 0.12) 68%), url(${landingImage})` }}
+    >
+      <div className="landing-overlay">
+        <p className="eyebrow">Study Smarter With AI</p>
+        <h1>Turn notes and PDFs into study guides, flashcards, and oral exam practice.</h1>
+        <p className="hero-copy landing-text">
+          Study Sphere helps you go from raw material to active recall faster, so you can understand, revise, and
+          practice in one place.
+        </p>
+
+        <div className="landing-points">
+          <span>Generate structured study guides</span>
+          <span>Practice with recall flashcards</span>
+          <span>Train with adaptive oral exams</span>
+        </div>
+
+        <div className="landing-actions">
           <Link className="primary-button" to="/create">
-            Create a Study Set
+            Start Studying
           </Link>
-        </article>
-
-        <article className="panel recent-panel">
-          <div className="section-header">
-            <h2>Recent Study Sets</h2>
-          </div>
-          {studySets.length === 0 ? (
-            <p className="muted">Once you save a generated study pack, it will show up here.</p>
-          ) : (
-            <div className="recent-list">
-              {studySets.map((set) => (
-                <Link className="recent-item" key={set.id} to={`/study-sets/${set.id}`}>
-                  <strong>{set.title}</strong>
-                  <span>{set.flashcards.length} flashcards</span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </article>
+          <span className="landing-helper">Paste notes or upload a PDF to create your first study set.</span>
+        </div>
       </div>
-
-      <article className="info-panel">
-        <h2>MVP Workflow</h2>
-        <ol className="ordered-list">
-          <li>Paste notes or lecture content.</li>
-          <li>Generate a study guide and flashcards.</li>
-          <li>Edit weak cards and keep the strong ones.</li>
-          <li>Return later for active recall practice.</li>
-        </ol>
-      </article>
     </section>
   );
 }

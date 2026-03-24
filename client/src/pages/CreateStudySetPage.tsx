@@ -19,12 +19,14 @@ function formatPdfTitle(fileName: string) {
 export function CreateStudySetPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [sourceType, setSourceType] = useState<"text" | "pdf">("text");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [result, setResult] = useState<GenerateStudySetResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -33,6 +35,13 @@ export function CreateStudySetPage() {
     setIsSubmitting(true);
 
     try {
+      const combinedSourceText =
+        sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
+
+      if (sourceType === "text" && !combinedSourceText.trim()) {
+        throw new Error("Add a link or paste text before generating.");
+      }
+
       const generated =
         sourceType === "pdf"
           ? await generateStudySet(
@@ -46,7 +55,7 @@ export function CreateStudySetPage() {
           : await generateStudySet({
               title,
               sourceType: "text",
-              sourceText
+              sourceText: combinedSourceText
             });
 
       setResult(generated);
@@ -67,7 +76,10 @@ export function CreateStudySetPage() {
 
     try {
       const saved = await saveStudySet({
-        sourceText: sourceType === "pdf" ? `Uploaded PDF: ${sourceFile?.name ?? "document.pdf"}` : sourceText,
+        sourceText:
+          sourceType === "pdf"
+            ? `Uploaded PDF: ${sourceFile?.name ?? "document.pdf"}`
+            : [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n"),
         sourceType,
         sourceFileName: sourceFile?.name,
         ...result
@@ -85,21 +97,25 @@ export function CreateStudySetPage() {
     <section className="page-grid">
       <form className="panel form-panel" onSubmit={handleSubmit}>
         <div className="field">
-          <label>Source Type</label>
-          <div className="toggle-row">
+          <label>Choose your input</label>
+          <div className="source-option-grid">
             <button
-              className={sourceType === "text" ? "toggle-button active" : "toggle-button"}
+              className={sourceType === "text" ? "source-option-card active" : "source-option-card"}
               type="button"
               onClick={() => setSourceType("text")}
             >
-              Paste Text
+              <span className="source-option-icon">Paste</span>
+              <span className="source-option-title">Paste</span>
+              <span className="source-option-description">YouTube transcript, website text, class notes</span>
             </button>
             <button
-              className={sourceType === "pdf" ? "toggle-button active" : "toggle-button"}
+              className={sourceType === "pdf" ? "source-option-card active" : "source-option-card"}
               type="button"
               onClick={() => setSourceType("pdf")}
             >
-              Upload PDF
+              <span className="source-option-icon">PDF</span>
+              <span className="source-option-title">Upload PDF</span>
+              <span className="source-option-description">Lecture slides, handouts, textbook sections</span>
             </button>
           </div>
         </div>
@@ -116,14 +132,20 @@ export function CreateStudySetPage() {
 
         {sourceType === "text" ? (
           <div className="field">
-            <label htmlFor="sourceText">Source Notes</label>
-            <textarea
-              id="sourceText"
-              rows={14}
-              value={sourceText}
-              placeholder={starterText}
-              onChange={(event) => setSourceText(event.target.value)}
-            />
+            <label>Add content</label>
+            <button className="content-trigger" type="button" onClick={() => setIsPasteModalOpen(true)}>
+              {sourceUrl || sourceText ? "Edit pasted content" : "Paste link or text"}
+            </button>
+            <div className="content-preview">
+              <p className="muted small-copy">
+                {sourceUrl ? `Link added: ${sourceUrl}` : "No link added yet."}
+              </p>
+              <p className="muted small-copy">
+                {sourceText
+                  ? `${Math.min(sourceText.length, 240)} characters of pasted text ready for generation.`
+                  : "No pasted text yet. Add website text, a YouTube transcript, or your notes."}
+              </p>
+            </div>
           </div>
         ) : (
           <div className="field">
@@ -204,6 +226,59 @@ export function CreateStudySetPage() {
           </>
         )}
       </article>
+
+      {sourceType === "text" && isPasteModalOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsPasteModalOpen(false)}>
+          <div
+            aria-modal="true"
+            className="content-modal"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="content-modal-header">
+              <div>
+                <h2>Add Content</h2>
+                <p className="muted">Enter a URL or paste text to create your study set.</p>
+              </div>
+              <button className="modal-close" type="button" onClick={() => setIsPasteModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="field">
+              <label htmlFor="sourceUrl">Enter a YouTube or website URL</label>
+              <input
+                id="sourceUrl"
+                placeholder="https://youtube.com/watch?v=..."
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+              />
+            </div>
+
+            <div className="content-modal-divider">
+              <span>or</span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="sourceText">Copy and paste text to add as content</label>
+              <textarea
+                id="sourceText"
+                rows={10}
+                value={sourceText}
+                placeholder={starterText}
+                onChange={(event) => setSourceText(event.target.value)}
+              />
+              <p className="content-counter">{sourceText.length}/50000</p>
+            </div>
+
+            <div className="content-modal-actions">
+              <button className="primary-button" type="button" onClick={() => setIsPasteModalOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -1,4 +1,9 @@
-import type { GenerateStudySetResponse } from "@automated-study-system/shared";
+import { randomUUID } from "node:crypto";
+import type {
+  EvaluateExamTurnRequest,
+  EvaluateExamTurnResponse,
+  GenerateStudySetResponse
+} from "@automated-study-system/shared";
 import { z } from "zod";
 
 type PdfInput = {
@@ -35,6 +40,24 @@ const studySetSchema = z.object({
     )
     .min(8)
     .max(12)
+});
+
+const examTurnResponseSchema = z.object({
+  result: z.object({
+    idealAnswer: z.string().min(1),
+    feedback: z.string().min(1),
+    score: z.number().min(0).max(100),
+    classification: z.enum(["strong", "partial", "weak"]),
+    weakTopics: z.array(z.string()).max(5)
+  }),
+  nextQuestion: z
+    .object({
+      prompt: z.string().min(5),
+      focusTopic: z.string().optional()
+    })
+    .optional(),
+  shouldEnd: z.boolean(),
+  weakTopics: z.array(z.string()).max(8)
 });
 
 function getGeminiConfig() {
@@ -226,5 +249,133 @@ export async function generateStudyMaterials(
       answer: card.answer,
       order: card.order ?? index + 1
     }))
+  };
+}
+
+export async function evaluateExamTurn(
+  payload: EvaluateExamTurnRequest
+): Promise<EvaluateExamTurnResponse> {
+  const { apiKey, model } = getGeminiConfig();
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [
+            {
+              text: [
+                "You are an adaptive oral exam coach for a study app.",
+                "Grade conceptual understanding rather than exact wording.",
+                "Keep feedback concise and actionable.",
+                "Return JSON only and follow the response schema exactly.",
+                "When the user is weak, ask a follow-up question targeting the weak topic.",
+                "When the user is strong and the session has enough coverage, you may end the session."
+              ].join(" ")
+            }
+          ]
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: [
+                  `Study set title: ${payload.studySet.title}`,
+                  `Summary: ${payload.studySet.summary}`,
+                  `Study guide: ${payload.studySet.studyGuide}`,
+                  `Key concepts: ${payload.studySet.keyConcepts.join(", ")}`,
+                  `Source text: ${payload.studySet.sourceText || "No source text available."}`,
+                  `Flashcards: ${payload.studySet.flashcards.map((card) => `Q: ${card.question} A: ${card.answer}`).join(" | ")}`,
+                  `Current question: ${payload.currentQuestion.prompt}`,
+                  `Current focus topic: ${payload.currentQuestion.focusTopic ?? "none"}`,
+                  `User answer: ${payload.userAnswer}`,
+                  `Previous weak topics: ${payload.weakTopics.join(", ") || "none"}`,
+                  `Previous turns: ${payload.turns
+                    .map(
+                      (turn) =>
+                        `Question: ${turn.question}; Score: ${turn.score}; Classification: ${turn.classification}; Weak topics: ${
+                          turn.weakTopics.join(", ") || "none"
+                        }`
+                    )
+                    .join(" || ") || "none"}`,
+                  `Target question count: ${payload.totalQuestionsTarget ?? 5}`,
+                  "Return:",
+                  "- result with idealAnswer, feedback, score, classification, weakTopics",
+                  "- weakTopics merged for ongoing session",
+                  "- nextQuestion when the session should continue",
+                  "- shouldEnd boolean"
+                ].join("\n")
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            required: ["result", "weakTopics", "shouldEnd"],
+            properties: {
+              result: {
+                type: "OBJECT",
+                required: ["idealAnswer", "feedback", "score", "classification", "weakTopics"],
+                properties: {
+                  idealAnswer: { type: "STRING" },
+                  feedback: { type: "STRING" },
+                  score: { type: "NUMBER" },
+                  classification: { type: "STRING", enum: ["strong", "partial", "weak"] },
+                  weakTopics: { type: "ARRAY", items: { type: "STRING" } }
+                }
+              },
+              nextQuestion: {
+                type: "OBJECT",
+                properties: {
+                  prompt: { type: "STRING" },
+                  focusTopic: { type: "STRING" }
+                }
+              },
+              shouldEnd: { type: "BOOLEAN" },
+              weakTopics: { type: "ARRAY", items: { type: "STRING" } }
+            }
+          }
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini exam request failed: ${response.status} ${errorText}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  const outputText = extractTextResponse(data);
+  const parsed = examTurnResponseSchema.parse(JSON.parse(outputText) as unknown);
+  const timestamp = new Date().toISOString();
+
+  return {
+    result: {
+      questionId: payload.currentQuestion.id,
+      question: payload.currentQuestion.prompt,
+      userAnswer: payload.userAnswer,
+      idealAnswer: parsed.result.idealAnswer,
+      feedback: parsed.result.feedback,
+      score: parsed.result.score,
+      classification: parsed.result.classification,
+      weakTopics: parsed.result.weakTopics,
+      createdAt: timestamp
+    },
+    nextQuestion: parsed.nextQuestion
+      ? {
+          id: randomUUID(),
+          prompt: parsed.nextQuestion.prompt,
+          focusTopic: parsed.nextQuestion.focusTopic
+        }
+      : undefined,
+    weakTopics: parsed.weakTopics,
+    shouldEnd: parsed.shouldEnd
   };
 }

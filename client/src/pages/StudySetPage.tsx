@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import type { StudySet } from "@automated-study-system/shared";
 
-import { fetchStudySet } from "../lib/api";
+import { fetchStudySet, listExamSessions } from "../lib/api";
 
 export function StudySetPage() {
   const { id = "" } = useParams();
   const [studySet, setStudySet] = useState<StudySet | null>(null);
+  const [examSessionCount, setExamSessionCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,6 +18,7 @@ export function StudySetPage() {
       .then((data) => {
         if (!ignore) {
           setStudySet(data);
+          setExamSessionCount(listExamSessions(data.id).length);
         }
       })
       .catch((requestError) => {
@@ -47,6 +49,12 @@ export function StudySetPage() {
           Source: {studySet.sourceType === "pdf" ? `PDF${studySet.sourceFileName ? ` • ${studySet.sourceFileName}` : ""}` : "Text notes"}
         </p>
         <p>{studySet.summary}</p>
+        <div className="chip-row">
+          <Link className="primary-button" to={`/study-sets/${studySet.id}/exam`}>
+            Start Adaptive Oral Exam
+          </Link>
+          <span className="chip">{examSessionCount} saved exam sessions</span>
+        </div>
         <section className="result-block">
           <h3>Key Concepts</h3>
           <div className="chip-row">
