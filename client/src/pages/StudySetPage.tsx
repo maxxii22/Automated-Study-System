@@ -10,6 +10,7 @@ export function StudySetPage() {
   const { id = "" } = useParams();
   const [studySet, setStudySet] = useState<StudySet | null>(null);
   const [examSessionCount, setExamSessionCount] = useState(0);
+  const [activeConcept, setActiveConcept] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,15 +61,21 @@ export function StudySetPage() {
           <h3>Key Concepts</h3>
           <div className="chip-row">
             {studySet.keyConcepts.map((concept) => (
-              <span className="chip" key={concept}>
+              <button
+                className={activeConcept === concept ? "chip concept-chip active" : "chip concept-chip"}
+                key={concept}
+                onClick={() => setActiveConcept((current) => (current === concept ? null : concept))}
+                type="button"
+              >
                 {concept}
-              </span>
+              </button>
             ))}
           </div>
+          {activeConcept ? <p className="muted small-copy">Filtering study guide by: {activeConcept}</p> : null}
         </section>
         <section className="result-block">
           <h3>Study Guide</h3>
-          <StudyGuideRenderer content={studySet.studyGuide} />
+          <StudyGuideRenderer activeConcept={activeConcept} content={studySet.studyGuide} />
         </section>
       </article>
 

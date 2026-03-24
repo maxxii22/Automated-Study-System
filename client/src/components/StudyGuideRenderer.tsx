@@ -1,6 +1,25 @@
 type StudyGuideRendererProps = {
   content: string;
+  activeConcept?: string | null;
 };
+
+const STOP_WORDS = new Set([
+  "and",
+  "the",
+  "for",
+  "with",
+  "from",
+  "into",
+  "that",
+  "this",
+  "your",
+  "are",
+  "was",
+  "you",
+  "all",
+  "php",
+  "http"
+]);
 
 function splitStudyGuide(content: string): string[] {
   const normalized = content.trim();
@@ -28,16 +47,44 @@ function splitStudyGuide(content: string): string[] {
     .filter(Boolean);
 }
 
-export function StudyGuideRenderer({ content }: StudyGuideRendererProps) {
+function tokenizeConcept(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+}
+
+export function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendererProps) {
   const sections = splitStudyGuide(content);
+  const normalizedConcept = activeConcept?.trim().toLowerCase() ?? "";
+  const conceptTokens = activeConcept ? tokenizeConcept(activeConcept) : [];
+  const filteredSections =
+    normalizedConcept.length > 0
+      ? sections.filter((section) => {
+          const lowerSection = section.toLowerCase();
+
+          if (lowerSection.includes(normalizedConcept)) {
+            return true;
+          }
+
+          const matches = conceptTokens.filter((token) => lowerSection.includes(token)).length;
+          return conceptTokens.length > 0 && matches >= Math.max(1, Math.ceil(conceptTokens.length / 2));
+        })
+      : sections;
 
   if (sections.length === 0) {
     return null;
   }
 
+  if (filteredSections.length === 0) {
+    return <p className="muted">No study guide sections matched this key concept yet.</p>;
+  }
+
   return (
     <ol className="study-guide-list">
-      {sections.map((section, index) => (
+      {filteredSections.map((section, index) => (
         <li className="study-guide-item" key={`${index}-${section.slice(0, 24)}`}>
           {section.split(/\n+/).map((paragraph, paragraphIndex) => (
             <p key={`${index}-${paragraphIndex}`}>{paragraph}</p>
