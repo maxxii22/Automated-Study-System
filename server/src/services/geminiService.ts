@@ -25,6 +25,14 @@ type TextInput = {
 
 type StudyGenerationInput = TextInput | PdfInput;
 
+type AudioTranscriptionInput = {
+  audioFile: {
+    buffer: Buffer;
+    mimeType: string;
+    fileName: string;
+  };
+};
+
 const studySetSchema = z.object({
   title: z.string().min(1),
   summary: z.string().min(10),
@@ -378,4 +386,62 @@ export async function evaluateExamTurn(
     weakTopics: parsed.weakTopics,
     shouldEnd: parsed.shouldEnd
   };
+}
+
+export async function transcribeExamAnswer(payload: AudioTranscriptionInput): Promise<string> {
+  const { apiKey, model } = getGeminiConfig();
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [
+            {
+              text: [
+                "You transcribe spoken answers for an oral exam study app.",
+                "Return plain text only.",
+                "Do not summarize.",
+                "Preserve technical vocabulary and named concepts.",
+                "If the speech is unclear, transcribe the best possible interpretation without adding commentary."
+              ].join(" ")
+            }
+          ]
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: payload.audioFile.mimeType,
+                  data: payload.audioFile.buffer.toString("base64")
+                }
+              },
+              {
+                text: `Transcribe this oral exam answer from the uploaded audio file: ${payload.audioFile.fileName}`
+              }
+            ]
+          }
+        ]
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini transcription request failed: ${response.status} ${errorText}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  const transcript = extractTextResponse(data).trim();
+
+  if (!transcript) {
+    throw new Error("No speech transcript was returned from the recorded answer.");
+  }
+
+  return transcript;
 }

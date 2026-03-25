@@ -164,6 +164,25 @@ export async function evaluateExamTurn(
   return response.json() as Promise<EvaluateExamTurnResponse>;
 }
 
+export async function transcribeExamAnswer(audioBlob: Blob): Promise<string> {
+  const formData = new FormData();
+  const extension = audioBlob.type.includes("mp4") ? "m4a" : audioBlob.type.includes("ogg") ? "ogg" : "webm";
+  formData.append("audioFile", new File([audioBlob], `oral-answer.${extension}`, { type: audioBlob.type || "audio/webm" }));
+
+  const response = await fetch(`${API_BASE_URL}/study-sets/transcribe-answer`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(error?.message ?? "Failed to transcribe oral answer.");
+  }
+
+  const payload = (await response.json()) as { transcript: string };
+  return payload.transcript;
+}
+
 export function createExamSession(studySet: StudySet, totalQuestionsTarget = 5): ExamSession {
   const starterQuestion = buildStarterQuestion(studySet);
   const timestamp = new Date().toISOString();

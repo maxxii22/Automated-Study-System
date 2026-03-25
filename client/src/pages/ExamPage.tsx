@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import type { ExamSession, StudySet } from "@automated-study-system/shared";
@@ -10,8 +10,20 @@ import {
   fetchStudySet,
   getExamSession,
   listExamSessions,
-  saveExamSession
+  saveExamSession,
+  transcribeExamAnswer
 } from "../lib/api";
+
+function MicrophoneIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
+      <path
+        d="M12 3.5a3 3 0 0 0-3 3V12a3 3 0 1 0 6 0V6.5a3 3 0 0 0-3-3ZM7 10.5a.75.75 0 0 1 .75.75V12a4.25 4.25 0 0 0 8.5 0v-.75a.75.75 0 0 1 1.5 0V12a5.76 5.76 0 0 1-5 5.7V20h2a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2v-2.3a5.76 5.76 0 0 1-5-5.7v-.75A.75.75 0 0 1 7 10.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
 
 export function ExamPage() {
   const { id = "" } = useParams();
@@ -22,6 +34,12 @@ export function ExamPage() {
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "processing">("idle");
+  const [recordingHint, setRecordingHint] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const answerBeforeRecordingRef = useRef("");
 
   useEffect(() => {
     let ignore = false;
@@ -47,8 +65,19 @@ export function ExamPage() {
 
     return () => {
       ignore = true;
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordingHint("Voice recording works in browsers that support microphone capture over HTTPS or localhost.");
+      return;
+    }
+
+    setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
+  }, []);
 
   const progressLabel = useMemo(() => {
     if (!session) {
@@ -67,6 +96,11 @@ export function ExamPage() {
 
     if (!answer.trim()) {
       setError("Enter an answer before submitting.");
+      return;
+    }
+
+    if (recordingState === "recording") {
+      setError("Stop the microphone recording before submitting your answer.");
       return;
     }
 
@@ -98,11 +132,103 @@ export function ExamPage() {
       setSession(updatedSession);
       setHistory(listExamSessions(studySet.id));
       setAnswer("");
+      setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not evaluate answer.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Voice recording is not supported in this browser.");
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+
+      answerBeforeRecordingRef.current = answer.trim();
+      chunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        chunksRef.current = [];
+
+        if (!blob.size) {
+          setRecordingState("idle");
+          setError("No audio was captured. Try recording again.");
+          return;
+        }
+
+        setRecordingState("processing");
+        setRecordingHint("Transcribing your oral answer...");
+
+        try {
+          const transcript = await transcribeExamAnswer(blob);
+          const mergedAnswer = [answerBeforeRecordingRef.current, transcript.trim()]
+            .filter(Boolean)
+            .join(answerBeforeRecordingRef.current && transcript.trim() ? "\n" : "");
+
+          setAnswer(mergedAnswer);
+          setRecordingHint("Transcript added. Review it, then submit your answer.");
+        } catch (recordingError) {
+          setError(recordingError instanceof Error ? recordingError.message : "Could not transcribe the recorded answer.");
+          setRecordingHint("You can still type your answer if recording fails.");
+        } finally {
+          setRecordingState("idle");
+        }
+      };
+
+      recorder.start();
+      setRecordingState("recording");
+      setRecordingHint("Recording your oral answer. Tap the microphone again to stop.");
+    } catch (recordingError) {
+      const message =
+        recordingError instanceof DOMException && recordingError.name === "NotAllowedError"
+          ? "Microphone access was blocked. Allow microphone access and try again."
+          : recordingError instanceof DOMException && recordingError.name === "NotFoundError"
+            ? "No microphone was found for voice answering. Check your laptop input device."
+            : "Could not start microphone recording. Check your browser permissions and device settings.";
+
+      setError(message);
+      setRecordingHint("You can still type your answer if recording is unavailable.");
+      setRecordingState("idle");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
+  function handleMicrophoneClick() {
+    if (recordingState === "processing") {
+      return;
+    }
+
+    if (recordingState === "recording") {
+      stopRecording();
+      return;
+    }
+
+    void startRecording();
   }
 
   if (error && !studySet) {
@@ -114,6 +240,8 @@ export function ExamPage() {
   }
 
   const latestTurn = session.turns.at(-1);
+  const completedWeakTopics = session.summary?.weakTopics ?? session.weakTopics;
+  const reviewConcept = completedWeakTopics[0];
 
   return (
     <section className="page-grid exam-page">
@@ -134,26 +262,49 @@ export function ExamPage() {
             <p className="muted">
               Average score: {session.summary?.averageScore ?? 0}% across {session.summary?.totalQuestions ?? 0} questions.
             </p>
-            <div className="chip-row">
-              {(session.summary?.weakTopics ?? []).map((topic) => (
-                <span className="chip" key={topic}>
-                  {topic}
-                </span>
-              ))}
+            <section className="result-block exam-summary-block">
+              <h3>Current Weak Topics</h3>
+              {completedWeakTopics.length > 0 ? (
+                <div className="chip-row">
+                  {completedWeakTopics.map((topic) => (
+                    <span className="chip" key={topic}>
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">No weak topics were detected in this session.</p>
+              )}
+            </section>
+            <div className="chip-row exam-summary-actions">
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => {
+                  const restarted = createExamSession(studySet);
+                  saveExamSession(restarted);
+                  setSession(restarted);
+                  setHistory(listExamSessions(studySet.id));
+                  setAnswer("");
+                  setError(null);
+                  setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
+                }}
+              >
+                Retake Test
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!reviewConcept}
+                type="button"
+                onClick={() =>
+                  navigate(`/study-sets/${studySet.id}`, {
+                    state: reviewConcept ? { focusConcept: reviewConcept } : undefined
+                  })
+                }
+              >
+                Review Current Weak Topics
+              </button>
             </div>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => {
-                const restarted = createExamSession(studySet);
-                saveExamSession(restarted);
-                setSession(restarted);
-                setHistory(listExamSessions(studySet.id));
-                setAnswer("");
-              }}
-            >
-              Start New Session
-            </button>
           </section>
         ) : (
           <>
@@ -168,13 +319,37 @@ export function ExamPage() {
 
             <form className="field" onSubmit={handleSubmit}>
               <label htmlFor="exam-answer">Your Answer</label>
-              <textarea
-                id="exam-answer"
-                rows={8}
-                value={answer}
-                placeholder="Type your answer as if you were responding in an oral exam."
-                onChange={(event) => setAnswer(event.target.value)}
-              />
+              {recordingHint ? <p className="muted small-copy exam-audio-hint">{recordingHint}</p> : null}
+              <div className="exam-answer-wrap">
+                <textarea
+                  id="exam-answer"
+                  rows={8}
+                  value={answer}
+                  placeholder="Type your answer, or use the microphone to record an oral response."
+                  onChange={(event) => setAnswer(event.target.value)}
+                />
+                <button
+                  aria-label={
+                    recordingState === "recording"
+                      ? "Stop recording oral answer"
+                      : recordingState === "processing"
+                        ? "Transcribing oral answer"
+                        : "Record oral answer"
+                  }
+                  className={
+                    recordingState === "recording"
+                      ? "exam-mic-button is-recording"
+                      : recordingState === "processing"
+                        ? "exam-mic-button is-processing"
+                        : "exam-mic-button"
+                  }
+                  disabled={recordingState === "processing"}
+                  onClick={handleMicrophoneClick}
+                  type="button"
+                >
+                  <MicrophoneIcon />
+                </button>
+              </div>
               <button className="primary-button" type="submit" disabled={isSubmitting}>
                 {isSubmitting ? "Scoring..." : "Submit Answer"}
               </button>
@@ -210,17 +385,6 @@ export function ExamPage() {
             ))}
           </div>
         )}
-
-        <section className="result-block">
-          <h3>Current Weak Topics</h3>
-          <div className="chip-row">
-            {(session.weakTopics.length > 0 ? session.weakTopics : studySet.keyConcepts.slice(0, 3)).map((topic) => (
-              <span className="chip" key={topic}>
-                {topic}
-              </span>
-            ))}
-          </div>
-        </section>
 
         <button className="secondary-button" onClick={() => navigate(`/study-sets/${studySet.id}`)} type="button">
           Return to Study Set
