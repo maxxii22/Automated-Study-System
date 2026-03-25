@@ -1,4 +1,4 @@
-import studySphereLogo from "../assets/studyspheretransparent (2).png";
+import studySphereLogo from "../assets/logo/studyspheretransparent (2).png";
 
 type StudySphereLogoProps = {
   compact?: boolean;
