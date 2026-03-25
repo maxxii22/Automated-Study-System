@@ -1363,7 +1363,7 @@ h1 {
   .landing-hero-inner {
     grid-template-columns: 1fr;
     gap: 26px;
-    padding: 112px 24px 40px;
+    padding: 144px 24px 40px;
   }
 
   .landing-showcase {
@@ -1498,7 +1498,11 @@ h1 {
   }
 
   .landing-hero-inner {
-    padding: 104px 18px 30px;
+    padding: 156px 18px 30px;
+  }
+
+  .landing-copy .eyebrow {
+    margin-top: 6px;
   }
 
   .landing-section {
