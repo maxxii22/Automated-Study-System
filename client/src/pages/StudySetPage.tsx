@@ -1,40 +1,100 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
-import type { StudySet } from "@automated-study-system/shared";
+import type { Flashcard, RescueAttempt, StudySet } from "@automated-study-system/shared";
 
+import { StatePanel } from "../components/StatePanel";
 import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
-import { fetchStudySet, listExamSessions } from "../lib/api";
+import { fetchExamSessions, fetchRescueAttempts, fetchStudySet, fetchStudySetFlashcards, mergeFlashcards } from "../lib/api";
+
+const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard }) {
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  return (
+    <button
+      aria-label={isFlipped ? "Hide flashcard answer" : "Reveal flashcard answer"}
+      aria-pressed={isFlipped}
+      className={isFlipped ? "flashcard is-flipped" : "flashcard"}
+      onClick={() => setIsFlipped((current) => !current)}
+      type="button"
+    >
+      <span className="flashcard-inner">
+        <span className="flashcard-side flashcard-front">
+          <span className="flashcard-label">Question</span>
+          <span className="flashcard-copy">{card.question}</span>
+          <span className="flashcard-helper">Tap to reveal answer</span>
+        </span>
+        <span className="flashcard-side flashcard-back">
+          <span className="flashcard-label">Answer</span>
+          <span className="flashcard-copy">{card.answer}</span>
+          <span className="flashcard-helper">Tap to flip back</span>
+        </span>
+      </span>
+    </button>
+  );
+});
 
 export function StudySetPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const [studySet, setStudySet] = useState<StudySet | null>(null);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [flashcardCursor, setFlashcardCursor] = useState<string | null>(null);
+  const [hasMoreFlashcards, setHasMoreFlashcards] = useState(false);
+  const [isLoadingMoreFlashcards, setIsLoadingMoreFlashcards] = useState(false);
   const [examSessionCount, setExamSessionCount] = useState(0);
+  const [isLoadingExamSessions, setIsLoadingExamSessions] = useState(true);
+  const [rescueAttempts, setRescueAttempts] = useState<RescueAttempt[]>([]);
   const [activeConcept, setActiveConcept] = useState<string | null>(null);
-  const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [pageNotice, setPageNotice] = useState<string | null>(null);
+
+  async function loadStudySetPage() {
+    const data = await fetchStudySet(id);
+    const [sessionsResult, rescuesResult] = await Promise.allSettled([fetchExamSessions(id), fetchRescueAttempts(id)]);
+    const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : [];
+    const rescues = rescuesResult.status === "fulfilled" ? rescuesResult.value : [];
+    const noticeParts: string[] = [];
+
+    if (sessionsResult.status === "rejected") {
+      noticeParts.push("Exam history could not be refreshed right now.");
+    }
+
+    if (rescuesResult.status === "rejected") {
+      noticeParts.push("Rescue history is temporarily unavailable.");
+    }
+
+    setStudySet(data);
+    setFlashcards(data.flashcards);
+    setFlashcardCursor(data.flashcardCount > data.flashcards.length ? data.flashcards.at(-1)?.id ?? null : null);
+    setHasMoreFlashcards(data.flashcardCount > data.flashcards.length);
+    const preferredConcept =
+      typeof (location.state as { focusConcept?: string } | null)?.focusConcept === "string"
+        ? (location.state as { focusConcept?: string }).focusConcept
+        : null;
+
+    setActiveConcept(preferredConcept && data.keyConcepts.includes(preferredConcept) ? preferredConcept : null);
+    setExamSessionCount(sessions.length);
+    setRescueAttempts(rescues);
+    setIsLoadingExamSessions(false);
+    setPageNotice(noticeParts.length > 0 ? noticeParts.join(" ") : null);
+    setError(null);
+  }
 
   useEffect(() => {
     let ignore = false;
 
-    fetchStudySet(id)
-      .then((data) => {
+    loadStudySetPage()
+      .then(() => {
         if (!ignore) {
-          setStudySet(data);
-          setExamSessionCount(listExamSessions(data.id).length);
-          setFlippedCards({});
-          const preferredConcept =
-            typeof (location.state as { focusConcept?: string } | null)?.focusConcept === "string"
-              ? (location.state as { focusConcept?: string }).focusConcept
-              : null;
-
-          setActiveConcept(preferredConcept && data.keyConcepts.includes(preferredConcept) ? preferredConcept : null);
+          setError(null);
         }
       })
       .catch((requestError) => {
         if (!ignore) {
           setError(requestError instanceof Error ? requestError.message : "Could not load study set.");
+          setIsLoadingExamSessions(false);
+          setPageNotice(null);
         }
       });
 
@@ -44,19 +104,95 @@ export function StudySetPage() {
   }, [id, location.state]);
 
   if (error) {
-    return <section className="panel">{error}</section>;
+    return (
+      <StatePanel
+        actions={
+          <button
+            className="primary-button"
+            onClick={() => {
+              setStudySet(null);
+              setIsLoadingExamSessions(true);
+              void loadStudySetPage().catch((requestError) => {
+                setError(requestError instanceof Error ? requestError.message : "Could not load study set.");
+                setIsLoadingExamSessions(false);
+                setPageNotice(null);
+              });
+            }}
+            type="button"
+          >
+            Try Again
+          </button>
+        }
+        copy={error}
+        eyebrow="Study Set Error"
+        title="We couldn’t load this study set."
+        tone="error"
+      />
+    );
   }
 
   if (!studySet) {
-    return <section className="panel">Loading study set...</section>;
+    return (
+      <section className="page-grid loading-page-grid study-page">
+        <article className="panel loading-panel">
+          <div className="loading-stack">
+            <div className="skeleton-line skeleton-short" />
+            <div className="skeleton-line loading-heading-line" />
+            <div className="skeleton-line loading-subtle-line" />
+            <div className="loading-chip-row">
+              <div className="skeleton-line loading-chip-line" />
+              <div className="skeleton-line loading-chip-line" />
+            </div>
+            <div className="skeleton-line" />
+            <div className="skeleton-line" />
+            <div className="skeleton-line loading-subtle-line" />
+            <div className="loading-card-block">
+              <div className="skeleton-line loading-card-title-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line loading-subtle-line" />
+            </div>
+          </div>
+        </article>
+
+        <article className="panel loading-panel">
+          <div className="loading-stack">
+            <div className="skeleton-line loading-heading-line" />
+            <div className="loading-flashcard-grid">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div className="loading-flashcard-card" key={index}>
+                  <div className="skeleton-line loading-card-title-line" />
+                  <div className="skeleton-line" />
+                  <div className="skeleton-line loading-subtle-line" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </article>
+      </section>
+    );
   }
 
-  const toggleFlashcard = (cardId: string) => {
-    setFlippedCards((current) => ({
-      ...current,
-      [cardId]: !current[cardId],
-    }));
-  };
+  async function handleLoadMoreFlashcards() {
+    if (!flashcardCursor) {
+      return;
+    }
+
+    setIsLoadingMoreFlashcards(true);
+
+    try {
+      const response = await fetchStudySetFlashcards(id, flashcardCursor);
+      setFlashcards((current) => mergeFlashcards(current, response.items));
+      setFlashcardCursor(response.page.nextCursor ?? null);
+      setHasMoreFlashcards(response.page.hasMore);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load more flashcards.");
+    } finally {
+      setIsLoadingMoreFlashcards(false);
+    }
+  }
+
+  const recoveredRescues = rescueAttempts.filter((attempt) => attempt.status === "recovered");
+  const activeRescues = rescueAttempts.filter((attempt) => attempt.status !== "recovered");
 
   return (
     <section className="page-grid study-page">
@@ -67,12 +203,57 @@ export function StudySetPage() {
           Source: {studySet.sourceType === "pdf" ? `PDF${studySet.sourceFileName ? ` • ${studySet.sourceFileName}` : ""}` : "Text notes"}
         </p>
         <p>{studySet.summary}</p>
+        {pageNotice ? (
+          <div className="inline-feedback-block inline-feedback-warning">
+            <p className="muted">{pageNotice}</p>
+          </div>
+        ) : null}
         <div className="chip-row">
           <Link className="primary-button" to={`/study-sets/${studySet.id}/exam`}>
             Start Adaptive Oral Exam
           </Link>
-          <span className="chip">{examSessionCount} saved exam sessions</span>
+          <span className="chip">{isLoadingExamSessions ? "Loading exam history..." : `${examSessionCount} saved exam sessions`}</span>
+          <span className="chip">
+            {activeRescues.length > 0 ? `${activeRescues.length} active rescue step${activeRescues.length === 1 ? "" : "s"}` : `${recoveredRescues.length} rescued concept${recoveredRescues.length === 1 ? "" : "s"}`}
+          </span>
         </div>
+
+        {rescueAttempts.length > 0 ? (
+          <section className="result-block">
+            <h3>Rescue History</h3>
+            {recoveredRescues.length > 0 ? (
+              <>
+                <p className="muted small-copy">Recovered concepts</p>
+                <div className="chip-row">
+                  {recoveredRescues.slice(0, 6).map((attempt) => (
+                    <span className="chip" key={attempt.id}>
+                      {attempt.concept}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            {activeRescues.length > 0 ? (
+              <div className="recent-list">
+                {activeRescues.slice(0, 3).map((attempt) => (
+                  <article className="recent-item" key={attempt.id}>
+                    <div className="recent-item-content">
+                      <strong className="recent-item-title">{attempt.concept}</strong>
+                      <p className="muted">{attempt.diagnosis}</p>
+                    </div>
+                    <div className="recent-item-actions">
+                      <Link className="recent-item-action" to={`/study-sets/${studySet.id}/exam`}>
+                        Resume Rescue
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <section className="result-block">
           <h3>Key Concepts</h3>
           <div className="chip-row">
@@ -98,30 +279,15 @@ export function StudySetPage() {
       <article className="panel">
         <h2>Flashcards</h2>
         <div className="flashcard-list">
-          {studySet.flashcards.map((card) => (
-            <button
-              aria-label={flippedCards[card.id] ? "Hide flashcard answer" : "Reveal flashcard answer"}
-              aria-pressed={Boolean(flippedCards[card.id])}
-              className={flippedCards[card.id] ? "flashcard is-flipped" : "flashcard"}
-              key={card.id}
-              onClick={() => toggleFlashcard(card.id)}
-              type="button"
-            >
-              <span className="flashcard-inner">
-                <span className="flashcard-side flashcard-front">
-                  <span className="flashcard-label">Question</span>
-                  <span className="flashcard-copy">{card.question}</span>
-                  <span className="flashcard-helper">Tap to reveal answer</span>
-                </span>
-                <span className="flashcard-side flashcard-back">
-                  <span className="flashcard-label">Answer</span>
-                  <span className="flashcard-copy">{card.answer}</span>
-                  <span className="flashcard-helper">Tap to flip back</span>
-                </span>
-              </span>
-            </button>
+          {flashcards.map((card) => (
+            <FlashcardItem card={card} key={card.id} />
           ))}
         </div>
+        {hasMoreFlashcards ? (
+          <button className="secondary-button" disabled={isLoadingMoreFlashcards} onClick={() => void handleLoadMoreFlashcards()} type="button">
+            {isLoadingMoreFlashcards ? "Loading..." : "Load More Flashcards"}
+          </button>
+        ) : null}
       </article>
     </section>
   );

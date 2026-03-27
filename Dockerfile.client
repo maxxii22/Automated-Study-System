@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+COPY client/package.json client/package.json
+COPY shared/package.json shared/package.json
+RUN npm install
+
+COPY . .
+
+RUN npm run build --workspace shared && npm run build --workspace client
+
+EXPOSE 4173
+
+CMD ["npm", "run", "preview", "--workspace", "client"]

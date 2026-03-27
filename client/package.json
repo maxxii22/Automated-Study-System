@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
     "build": "npm run build --workspace @automated-study-system/shared --prefix .. && tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
     "@automated-study-system/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.100.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/react": "^18.3.8",

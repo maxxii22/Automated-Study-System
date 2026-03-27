@@ -8,11 +8,14 @@
     "shared"
   ],
   "scripts": {
-    "start": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "start": "concurrently \"npm run dev:server\" \"npm run dev:worker\" \"npm run dev:client\"",
     "dev": "npm run dev --workspace client",
     "dev:client": "npm run dev --workspace client",
     "dev:server": "npm run dev --workspace server",
-    "build": "npm run build --workspace shared && npm run build --workspace server && npm run build --workspace client"
+    "dev:worker": "npm run dev:worker --workspace server",
+    "build": "npm run build --workspace shared && npm run build --workspace server && npm run build --workspace client",
+    "test:load": "node scripts/load-study-generation.mjs",
+    "test:queue": "node scripts/queue-failure-drill.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

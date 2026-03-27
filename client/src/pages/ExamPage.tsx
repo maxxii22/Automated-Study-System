@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import type { ExamSession, StudySet } from "@automated-study-system/shared";
+import type { ExamSession, RescueAttempt, StudySet } from "@automated-study-system/shared";
 
+import { StatePanel } from "../components/StatePanel";
 import {
   applyExamTurnResult,
+  createRescueAttempt,
   createExamSession,
   evaluateExamTurn,
+  fetchExamSessions,
+  fetchRescueAttempts,
   fetchStudySet,
-  getExamSession,
-  listExamSessions,
   saveExamSession,
+  submitRescueRetry,
   transcribeExamAnswer
 } from "../lib/api";
 
@@ -34,6 +37,14 @@ export function ExamPage() {
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [isRetryingLoad, setIsRetryingLoad] = useState(false);
+  const [activeRescue, setActiveRescue] = useState<RescueAttempt | null>(null);
+  const [rescueAnswer, setRescueAnswer] = useState("");
+  const [rescueError, setRescueError] = useState<string | null>(null);
+  const [isLoadingRescue, setIsLoadingRescue] = useState(false);
+  const [isSubmittingRescue, setIsSubmittingRescue] = useState(false);
   const [recordingState, setRecordingState] = useState<"idle" | "recording" | "processing">("idle");
   const [recordingHint, setRecordingHint] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -41,25 +52,88 @@ export function ExamPage() {
   const chunksRef = useRef<Blob[]>([]);
   const answerBeforeRecordingRef = useRef("");
 
+  function selectActiveRescueAttempt(attempts: RescueAttempt[]) {
+    return attempts.find((attempt) => attempt.status === "open") ?? attempts.find((attempt) => attempt.status === "needs_more_help") ?? null;
+  }
+
+  function shouldTriggerRescue(classification: "strong" | "partial" | "weak", score: number) {
+    return classification === "weak" || (classification === "partial" && score < 60);
+  }
+
+  async function loadExamPage() {
+    const [loadedStudySet, sessions] = await Promise.all([fetchStudySet(id), fetchExamSessions(id)]);
+    setStudySet(loadedStudySet);
+    const existingSession = sessions.find((item) => !item.completed) ?? null;
+    const nextSession = existingSession ?? (await saveExamSession(loadedStudySet.id, createExamSession(loadedStudySet)));
+    const rescueAttempts = await fetchRescueAttempts(loadedStudySet.id, nextSession.id);
+
+    setSession(nextSession);
+    setHistory(sessions.length > 0 ? sessions : [nextSession]);
+    setActiveRescue(selectActiveRescueAttempt(rescueAttempts));
+    setRescueAnswer("");
+    setRescueError(null);
+    setIsLoadingHistory(false);
+    setError(null);
+  }
+
+  async function handleRetryLoad() {
+    setIsRetryingLoad(true);
+    setStudySet(null);
+    setSession(null);
+    setActiveRescue(null);
+    setRescueAnswer("");
+    setRescueError(null);
+    setIsLoadingHistory(true);
+
+    try {
+      await loadExamPage();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load exam.");
+      setIsLoadingHistory(false);
+    } finally {
+      setIsRetryingLoad(false);
+    }
+  }
+
+  async function handleRestartExam() {
+    if (!studySet) {
+      return;
+    }
+
+    const restarted = createExamSession(studySet);
+    setIsRestarting(true);
+    setError(null);
+    setActiveRescue(null);
+    setRescueAnswer("");
+    setRescueError(null);
+    setAnswer("");
+    setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
+
+    try {
+      const savedSession = await saveExamSession(studySet.id, restarted);
+      const sessions = await fetchExamSessions(studySet.id);
+      setSession(savedSession);
+      setHistory(sessions);
+    } catch (restartError) {
+      setError(restartError instanceof Error ? restartError.message : "Could not restart the oral exam.");
+    } finally {
+      setIsRestarting(false);
+    }
+  }
+
   useEffect(() => {
     let ignore = false;
 
-    fetchStudySet(id)
-      .then((loadedStudySet) => {
+    loadExamPage()
+      .then(() => {
         if (ignore) {
           return;
         }
-
-        setStudySet(loadedStudySet);
-        const existingSession = getExamSession(loadedStudySet.id);
-        const nextSession = existingSession ?? createExamSession(loadedStudySet);
-        saveExamSession(nextSession);
-        setSession(nextSession);
-        setHistory(listExamSessions(loadedStudySet.id));
       })
       .catch((requestError) => {
         if (!ignore) {
           setError(requestError instanceof Error ? requestError.message : "Could not load exam.");
+          setIsLoadingHistory(false);
         }
       });
 
@@ -84,8 +158,30 @@ export function ExamPage() {
       return "Preparing exam...";
     }
 
+    if (activeRescue && activeRescue.status !== "recovered") {
+      return "Rescue step before the next exam question";
+    }
+
     return `Question ${Math.min(session.turns.length + 1, session.totalQuestionsTarget)} of ${session.totalQuestionsTarget}`;
-  }, [session]);
+  }, [activeRescue, session]);
+
+  async function handleRescueRetry() {
+    if (!studySet || !activeRescue || !rescueAnswer.trim()) {
+      return;
+    }
+
+    setRescueError(null);
+    setIsSubmittingRescue(true);
+
+    try {
+      const result = await submitRescueRetry(studySet.id, activeRescue.id, rescueAnswer.trim());
+      setActiveRescue(result.attempt);
+    } catch (submitError) {
+      setRescueError(submitError instanceof Error ? submitError.message : "Could not check the rescue answer.");
+    } finally {
+      setIsSubmittingRescue(false);
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,11 +224,32 @@ export function ExamPage() {
         shouldEnd
       );
 
-      saveExamSession(updatedSession);
-      setSession(updatedSession);
-      setHistory(listExamSessions(studySet.id));
+      const savedSession = await saveExamSession(studySet.id, updatedSession);
+      const sessions = await fetchExamSessions(studySet.id);
+      setSession(savedSession);
+      setHistory(sessions);
       setAnswer("");
       setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
+
+      if (!shouldEnd && shouldTriggerRescue(response.result.classification, response.result.score)) {
+        setIsLoadingRescue(true);
+        setActiveRescue(null);
+        setRescueAnswer("");
+        setRescueError(null);
+
+        try {
+          const rescueAttempt = await createRescueAttempt(studySet.id, savedSession.id);
+          setActiveRescue(rescueAttempt);
+        } catch (rescueCreateError) {
+          setRescueError(rescueCreateError instanceof Error ? rescueCreateError.message : "Could not start Rescue Mode.");
+        } finally {
+          setIsLoadingRescue(false);
+        }
+      } else {
+        setActiveRescue(null);
+        setRescueAnswer("");
+        setRescueError(null);
+      }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not evaluate answer.");
     } finally {
@@ -232,11 +349,65 @@ export function ExamPage() {
   }
 
   if (error && !studySet) {
-    return <section className="panel">{error}</section>;
+    return (
+      <StatePanel
+        actions={
+          <button
+            className="primary-button"
+            disabled={isRetryingLoad}
+            onClick={() => void handleRetryLoad()}
+            type="button"
+          >
+            {isRetryingLoad ? "Retrying..." : "Try Again"}
+          </button>
+        }
+        copy={error}
+        eyebrow="Exam Error"
+        title="We couldn’t prepare your oral exam."
+        tone="error"
+      />
+    );
   }
 
   if (!studySet || !session) {
-    return <section className="panel">Preparing adaptive oral exam...</section>;
+    return (
+      <section className="page-grid loading-page-grid exam-page">
+        <article className="panel loading-panel exam-panel">
+          <div className="loading-stack">
+            <div className="skeleton-line skeleton-short" />
+            <div className="skeleton-line loading-heading-line" />
+            <div className="skeleton-line loading-subtle-line" />
+            <div className="loading-card-block">
+              <div className="skeleton-line loading-card-title-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line loading-subtle-line" />
+            </div>
+            <div className="loading-card-block">
+              <div className="skeleton-line loading-card-title-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line loading-subtle-line" />
+            </div>
+          </div>
+        </article>
+
+        <article className="panel loading-panel">
+          <div className="loading-stack">
+            <div className="skeleton-line loading-heading-line" />
+            <div className="loading-card-block">
+              <div className="skeleton-line loading-card-title-line" />
+              <div className="skeleton-line loading-subtle-line" />
+              <div className="skeleton-line loading-subtle-line" />
+            </div>
+            <div className="loading-card-block">
+              <div className="skeleton-line loading-card-title-line" />
+              <div className="skeleton-line loading-subtle-line" />
+              <div className="skeleton-line loading-subtle-line" />
+            </div>
+          </div>
+        </article>
+      </section>
+    );
   }
 
   const latestTurn = session.turns.at(-1);
@@ -280,17 +451,9 @@ export function ExamPage() {
               <button
                 className="primary-button"
                 type="button"
-                onClick={() => {
-                  const restarted = createExamSession(studySet);
-                  saveExamSession(restarted);
-                  setSession(restarted);
-                  setHistory(listExamSessions(studySet.id));
-                  setAnswer("");
-                  setError(null);
-                  setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
-                }}
+                onClick={() => void handleRestartExam()}
               >
-                Retake Test
+                {isRestarting ? "Restarting..." : "Retake Test"}
               </button>
               <button
                 className="secondary-button"
@@ -309,6 +472,102 @@ export function ExamPage() {
         ) : (
           <>
             <p className="muted">{progressLabel}</p>
+            {isLoadingRescue ? (
+              <section className="rescue-panel">
+                <p className="eyebrow">Rescue Mode</p>
+                <h3>Preparing your recovery step.</h3>
+                <p className="muted">We’re building a focused explanation before you move to the next exam question.</p>
+              </section>
+            ) : null}
+
+            {activeRescue ? (
+              <section className="rescue-panel">
+                <div className="section-header rescue-panel-header">
+                  <div>
+                    <p className="eyebrow">Rescue Mode</p>
+                    <h3>{activeRescue.status === "recovered" ? "Concept recovered." : `Let’s fix ${activeRescue.concept}.`}</h3>
+                  </div>
+                  {activeRescue.status === "recovered" ? (
+                    <button
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setActiveRescue(null);
+                        setRescueAnswer("");
+                        setRescueError(null);
+                      }}
+                      type="button"
+                    >
+                      Continue Exam
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="rescue-grid">
+                  <article className="rescue-block">
+                    <p className="flashcard-label">You missed</p>
+                    <p>{activeRescue.diagnosis}</p>
+                  </article>
+                  <article className="rescue-block">
+                    <p className="flashcard-label">Quick Reset</p>
+                    <p>{activeRescue.microLesson}</p>
+                  </article>
+                  {activeRescue.sourceSupport ? (
+                    <article className="rescue-block rescue-block-wide">
+                      <p className="flashcard-label">From Your Notes</p>
+                      <p>{activeRescue.sourceSupport}</p>
+                    </article>
+                  ) : null}
+                </div>
+
+                {activeRescue.retryFeedback ? (
+                  <article className="rescue-block rescue-feedback-block">
+                    <p className="flashcard-label">
+                      {activeRescue.status === "recovered" ? "Recovered" : "Still Needs Work"}
+                    </p>
+                    <p>{activeRescue.retryFeedback}</p>
+                    {typeof activeRescue.retryScore === "number" ? (
+                      <p className="muted small-copy">Retry score: {activeRescue.retryScore}%</p>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {activeRescue.status !== "recovered" ? (
+                  <div className="field rescue-form">
+                    <label htmlFor="rescue-answer">{activeRescue.retryQuestion.prompt}</label>
+                    <textarea
+                      id="rescue-answer"
+                      rows={5}
+                      value={rescueAnswer}
+                      placeholder="Try the concept again in your own words."
+                      onChange={(event) => setRescueAnswer(event.target.value)}
+                    />
+                    <div className="state-panel-actions">
+                      <button
+                        className="primary-button"
+                        disabled={isSubmittingRescue || !rescueAnswer.trim()}
+                        onClick={() => void handleRescueRetry()}
+                        type="button"
+                      >
+                        {isSubmittingRescue ? "Checking..." : "Try Again"}
+                      </button>
+                      <button
+                        className="secondary-button compact-button"
+                        onClick={() => {
+                          setActiveRescue(null);
+                          setRescueAnswer("");
+                          setRescueError(null);
+                        }}
+                        type="button"
+                      >
+                        Continue Exam
+                      </button>
+                    </div>
+                    {rescueError ? <p className="error-text">{rescueError}</p> : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <article className="exam-question-card">
               <p className="flashcard-label">Current Question</p>
               <h2>{session.currentQuestion.prompt}</h2>
@@ -322,6 +581,7 @@ export function ExamPage() {
               {recordingHint ? <p className="muted small-copy exam-audio-hint">{recordingHint}</p> : null}
               <div className="exam-answer-wrap">
                 <textarea
+                  disabled={isSubmitting || recordingState === "processing" || isLoadingRescue || (activeRescue !== null && activeRescue.status !== "recovered")}
                   id="exam-answer"
                   rows={8}
                   value={answer}
@@ -343,21 +603,41 @@ export function ExamPage() {
                         ? "exam-mic-button is-processing"
                         : "exam-mic-button"
                   }
-                  disabled={recordingState === "processing"}
+                  disabled={
+                    recordingState === "processing" ||
+                    isSubmitting ||
+                    isLoadingRescue ||
+                    (activeRescue !== null && activeRescue.status !== "recovered")
+                  }
                   onClick={handleMicrophoneClick}
                   type="button"
                 >
                   <MicrophoneIcon />
                 </button>
               </div>
-              <button className="primary-button" type="submit" disabled={isSubmitting}>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={isSubmitting || isLoadingRescue || (activeRescue !== null && activeRescue.status !== "recovered")}
+              >
                 {isSubmitting ? "Scoring..." : "Submit Answer"}
               </button>
             </form>
           </>
         )}
 
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? (
+          <div className="inline-feedback-block">
+            <p className="error-text">{error}</p>
+            {!session.completed && answer.trim() ? (
+              <div className="state-panel-actions">
+                <button className="secondary-button compact-button" disabled={isSubmitting} onClick={() => setError(null)} type="button">
+                  Keep Editing
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {latestTurn ? (
           <section className="feedback-panel">
@@ -372,7 +652,9 @@ export function ExamPage() {
 
       <article className="panel">
         <h2>Past Exam Sessions</h2>
-        {history.length === 0 ? (
+        {isLoadingHistory ? (
+          <p className="muted">Loading exam history...</p>
+        ) : history.length === 0 ? (
           <p className="muted">Your saved exam sessions for this study set will appear here.</p>
         ) : (
           <div className="recent-list">

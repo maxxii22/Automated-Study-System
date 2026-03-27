@@ -5,18 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
     "build": "npm run build --workspace @automated-study-system/shared --prefix .. && tsc -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
     "@automated-study-system/shared": "0.1.0",
+    "@aws-sdk/client-s3": "^3.1017.0",
     "@prisma/client": "^5.21.1",
+    "@supabase/supabase-js": "^2.100.1",
+    "bullmq": "^5.71.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
+    "ioredis": "^5.10.1",
     "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5",
+    "socket.io": "^4.8.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {

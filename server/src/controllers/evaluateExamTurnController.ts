@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { evaluateExamTurn } from "../services/geminiService.js";
+import { isGeminiRateLimitError } from "../services/geminiApi.js";
+import { evaluateExamTurnLocally } from "../services/examFallbackService.js";
 
 const examQuestionSchema = z.object({
   id: z.string().min(1),
@@ -38,6 +40,7 @@ const studySetSchema = z.object({
       order: z.number().int()
     })
   ),
+  flashcardCount: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -65,6 +68,13 @@ export async function evaluateExamTurnController(request: Request, response: Res
     const examResponse = await evaluateExamTurn(parsed.data);
     return response.status(200).json(examResponse);
   } catch (error) {
+    if (isGeminiRateLimitError(error)) {
+      const fallbackResponse = evaluateExamTurnLocally(parsed.data);
+      response.setHeader("X-Exam-Evaluation-Mode", "fallback");
+      response.setHeader("X-Exam-Evaluation-Reason", "gemini_rate_limit");
+      return response.status(200).json(fallbackResponse);
+    }
+
     return response.status(500).json({
       message: error instanceof Error ? error.message : "Exam evaluation failed."
     });

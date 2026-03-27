@@ -86,9 +86,15 @@ export function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendere
     <ol className="study-guide-list">
       {filteredSections.map((section, index) => (
         <li className="study-guide-item" key={`${index}-${section.slice(0, 24)}`}>
-          {section.split(/\n+/).map((paragraph, paragraphIndex) => (
-            <p key={`${index}-${paragraphIndex}`}>{paragraph}</p>
-          ))}
+          {section.split(/\n+/).map((paragraph, paragraphIndex) =>
+            paragraphIndex === 0 ? (
+              <h4 className="study-guide-section-title" key={`${index}-${paragraphIndex}`}>
+                {paragraph}
+              </h4>
+            ) : (
+              <p key={`${index}-${paragraphIndex}`}>{paragraph}</p>
+            )
+          )}
         </li>
       ))}
     </ol>

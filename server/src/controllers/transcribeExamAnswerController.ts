@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 
+import { isGeminiRateLimitError } from "../services/geminiApi.js";
 import { transcribeExamAnswer } from "../services/geminiService.js";
 
 export async function transcribeExamAnswerController(request: Request, response: Response) {
@@ -20,6 +21,12 @@ export async function transcribeExamAnswerController(request: Request, response:
 
     return response.status(200).json({ transcript });
   } catch (error) {
+    if (isGeminiRateLimitError(error)) {
+      return response.status(429).json({
+        message: "Gemini is rate limiting transcription right now. Please try again shortly."
+      });
+    }
+
     return response.status(500).json({
       message: error instanceof Error ? error.message : "Audio transcription failed."
     });

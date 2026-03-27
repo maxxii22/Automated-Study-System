@@ -1,5 +1,7 @@
 import multer from "multer";
 
+import { env } from "../config/env.js";
+
 function createUpload(options: { fileSize: number; accept: (mimeType: string) => boolean; message: string }) {
   return multer({
     storage: multer.memoryStorage(),
@@ -18,13 +20,13 @@ function createUpload(options: { fileSize: number; accept: (mimeType: string) =>
 }
 
 export const upload = createUpload({
-  fileSize: 10 * 1024 * 1024,
+  fileSize: env.MAX_PDF_UPLOAD_BYTES,
   accept: (mimeType) => mimeType === "application/pdf",
   message: "Only PDF uploads are supported."
 });
 
 export const audioUpload = createUpload({
-  fileSize: 15 * 1024 * 1024,
+  fileSize: env.MAX_AUDIO_UPLOAD_BYTES,
   accept: (mimeType) => mimeType.startsWith("audio/"),
   message: "Only audio uploads are supported for oral answers."
 });

@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
-import { saveGeneratedStudySet } from "../services/studySetStore.js";
+import { createStudySet } from "../services/studySetRepository.js";
+import { indexStudySetForSemanticCache } from "../services/studySetSemanticIndexService.js";
 
 const flashcardSchema = z.object({
   question: z.string().min(3),
@@ -30,7 +31,24 @@ export async function saveStudySetController(request: Request, response: Respons
     });
   }
 
-  const created = await saveGeneratedStudySet(parsed.data);
+  const created = await createStudySet({
+    ownerId: request.authUser!.id,
+    title: parsed.data.title,
+    sourceText: parsed.data.sourceText,
+    sourceType: parsed.data.sourceType,
+    sourceFileName: parsed.data.sourceFileName,
+    generated: {
+      title: parsed.data.title,
+      summary: parsed.data.summary,
+      studyGuide: parsed.data.studyGuide,
+      keyConcepts: parsed.data.keyConcepts,
+      flashcards: parsed.data.flashcards
+    }
+  });
+
+  await indexStudySetForSemanticCache(created, {
+    ownerId: request.authUser!.id
+  });
 
   return response.status(201).json(created);
 }

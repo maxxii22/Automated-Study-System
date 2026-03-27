@@ -3,20 +3,30 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model StudySet {
-  id          String      @id @default(cuid())
-  title       String
-  sourceText  String
-  summary     String
-  studyGuide  String
-  keyConcepts String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  flashcards  Flashcard[]
+  id             String      @id @default(cuid())
+  ownerId        String?
+  title          String
+  sourceText     String
+  sourceType     String
+  sourceFileName String?
+  summary        String
+  studyGuide     String
+  keyConcepts    String[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  flashcards     Flashcard[]
+  jobs           StudyJob[]
+  documents      Document[]
+  examSessions   ExamSession[]
+  rescueAttempts RescueAttempt[]
+
+  @@index([createdAt(sort: Desc)])
 }
 
 model Flashcard {
@@ -29,4 +39,131 @@ model Flashcard {
   updatedAt  DateTime @updatedAt
 
   studySet   StudySet @relation(fields: [studySetId], references: [id], onDelete: Cascade)
+
+  @@index([studySetId, order])
+}
+
+model StudyJob {
+  id              String   @id @default(cuid())
+  ownerId         String?
+  title           String
+  sourceType      String
+  status          String
+  stage           String?
+  progressPercent Int?
+  cacheHit        Boolean  @default(false)
+  errorCode       String?
+  errorMessage    String?
+  sourceText      String?
+  generatedPayload Json?
+  sourceFileName  String?
+  sourceObjectKey String?
+  documentHash    String?
+  studySetId      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+
+  studySet StudySet? @relation(fields: [studySetId], references: [id], onDelete: SetNull)
+  document Document? @relation(fields: [documentHash], references: [hash], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([documentHash, createdAt(sort: Desc)])
+}
+
+model Document {
+  id            String              @id @default(cuid())
+  hash          String              @unique
+  sourceFileName String?
+  sourceObjectKey String
+  mimeType      String
+  byteSize      Int
+  extractedText String?
+  studySetId    String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  studySet      StudySet?           @relation(fields: [studySetId], references: [id], onDelete: SetNull)
+  jobs          StudyJob[]
+  embeddings    DocumentEmbedding[]
+  owners        DocumentOwner[]
+}
+
+model DocumentEmbedding {
+  id         String   @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  embedding  Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+}
+
+model DocumentOwner {
+  documentId String
+  ownerId    String
+  createdAt  DateTime @default(now())
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, ownerId])
+  @@index([ownerId, documentId])
+}
+
+model ExamSession {
+  id                 String   @id
+  ownerId            String?
+  studySetId         String
+  completed          Boolean
+  currentQuestion    Json
+  turns              Json
+  weakTopics         String[]
+  cumulativeScore    Int
+  totalQuestionsTarget Int
+  summary            Json?
+  startedAt          DateTime
+  completedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  studySet           StudySet @relation(fields: [studySetId], references: [id], onDelete: Cascade)
+  rescueAttempts     RescueAttempt[]
+
+  @@index([studySetId, updatedAt(sort: Desc)])
+  @@index([studySetId, completed, updatedAt(sort: Desc)])
+}
+
+model RescueAttempt {
+  id               String   @id @default(cuid())
+  ownerId          String?
+  studySetId       String
+  examSessionId    String
+  triggerType      String
+  status           String
+  sourceQuestionId String
+  sourceQuestion   String
+  sourceAnswer     String
+  concept          String
+  diagnosis        String
+  microLesson      String
+  sourceSupport    String?
+  retryQuestion    Json
+  idealRetryAnswer String
+  retryUserAnswer  String?
+  retryFeedback    String?
+  retryScore       Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  resolvedAt       DateTime?
+
+  studySet         StudySet    @relation(fields: [studySetId], references: [id], onDelete: Cascade)
+  examSession      ExamSession @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
+
+  @@index([studySetId, createdAt(sort: Desc)])
+  @@index([ownerId, status, createdAt(sort: Desc)])
+  @@unique([examSessionId, sourceQuestionId])
 }

@@ -1,154 +1,156 @@
+import { io, type Socket } from "socket.io-client";
+
 import type {
+  CreateStudyJobResponse,
+  CreateRescueAttemptResponse,
   EvaluateExamTurnRequest,
   EvaluateExamTurnResponse,
   ExamQuestion,
   ExamSession,
   ExamSummary,
   ExamTurnResult,
-  GenerateStudySetRequest,
+  Flashcard,
   GenerateStudySetResponse,
-  StudySet
+  GetStudyJobResponse,
+  ListExamSessionsResponse,
+  ListRescueAttemptsResponse,
+  PaginatedFlashcardsResponse,
+  PaginatedStudySetsResponse,
+  RecoverStudyJobsResponse,
+  RescueAttempt,
+  RetryStudyJobResponse,
+  SaveExamSessionResponse,
+  SubmitRescueRetryResponse,
+  StudyJobOpsSummaryResponse,
+  StudyJobEvent,
+  StudySet,
+  StudySetJob
 } from "@automated-study-system/shared";
+import { getAccessToken } from "./supabase";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? "/api" : "http://localhost:4000/api");
-const STUDY_SET_STORAGE_KEY = "study-sphere.study-sets";
-const EXAM_SESSION_STORAGE_KEY = "study-sphere.exam-sessions";
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? API_BASE_URL.replace(/\/api$/, "");
 
-function canUseStorage() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+let sharedSocket: Socket | null = null;
+
+async function buildAuthHeaders(headers?: HeadersInit) {
+  const accessToken = await getAccessToken();
+  const nextHeaders = new Headers(headers);
+
+  if (accessToken) {
+    nextHeaders.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  return nextHeaders;
 }
 
-function readStoredStudySets(): StudySet[] {
-  if (!canUseStorage()) {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(STUDY_SET_STORAGE_KEY);
-
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    return JSON.parse(raw) as StudySet[];
-  } catch {
-    return [];
-  }
+async function authenticatedFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const headers = await buildAuthHeaders(init?.headers);
+  return fetch(input, {
+    ...init,
+    headers
+  });
 }
 
-function writeStoredStudySets(studySets: StudySet[]) {
-  if (!canUseStorage()) {
-    return;
+async function getSocket() {
+  const accessToken = await getAccessToken();
+
+  if (!sharedSocket) {
+    sharedSocket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      auth: accessToken ? { token: accessToken } : undefined,
+      autoConnect: false
+    });
+  } else {
+    sharedSocket.auth = accessToken ? { token: accessToken } : {};
   }
 
-  window.localStorage.setItem(STUDY_SET_STORAGE_KEY, JSON.stringify(studySets));
+  if (!sharedSocket.connected) {
+    sharedSocket.connect();
+  }
+
+  return sharedSocket;
 }
 
-function readStoredExamSessions(): ExamSession[] {
-  if (!canUseStorage()) {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(EXAM_SESSION_STORAGE_KEY);
-
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    return JSON.parse(raw) as ExamSession[];
-  } catch {
-    return [];
-  }
+async function parseJsonError(response: Response, fallback: string) {
+  const error = (await response.json().catch(() => null)) as { message?: string } | null;
+  return error?.message ?? fallback;
 }
 
-function writeStoredExamSessions(sessions: ExamSession[]) {
-  if (!canUseStorage()) {
-    return;
+export async function fetchStudySets(cursor?: string, limit = 10): Promise<PaginatedStudySetsResponse> {
+  const searchParams = new URLSearchParams();
+
+  if (cursor) {
+    searchParams.set("cursor", cursor);
   }
 
-  window.localStorage.setItem(EXAM_SESSION_STORAGE_KEY, JSON.stringify(sessions));
-}
+  searchParams.set("limit", String(limit));
 
-export async function fetchStudySets(): Promise<StudySet[]> {
-  return readStoredStudySets().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets?${searchParams.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load saved study sets."));
+  }
+
+  return response.json() as Promise<PaginatedStudySetsResponse>;
 }
 
 export async function fetchStudySet(id: string): Promise<StudySet> {
-  const studySet = readStoredStudySets().find((item) => item.id === id);
-
-  if (!studySet) {
-    throw new Error("Study set not found on this device.");
-  }
-
-  return studySet;
-}
-
-export async function generateStudySet(
-  payload: GenerateStudySetRequest,
-  sourceFile?: File | null
-): Promise<GenerateStudySetResponse> {
-  const response =
-    payload.sourceType === "pdf"
-      ? await sendPdfGenerationRequest(payload, sourceFile)
-      : await fetch(`${API_BASE_URL}/study-sets/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${id}`);
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(error?.message ?? "Failed to generate study set.");
+    throw new Error(await parseJsonError(response, "Could not load study set."));
   }
 
-  return response.json() as Promise<GenerateStudySetResponse>;
+  return response.json() as Promise<StudySet>;
+}
+
+export async function fetchStudySetFlashcards(
+  id: string,
+  cursor?: string,
+  limit = 10
+): Promise<PaginatedFlashcardsResponse> {
+  const searchParams = new URLSearchParams();
+
+  if (cursor) {
+    searchParams.set("cursor", cursor);
+  }
+
+  searchParams.set("limit", String(limit));
+
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${id}/flashcards?${searchParams.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load flashcards."));
+  }
+
+  return response.json() as Promise<PaginatedFlashcardsResponse>;
+}
+
+export async function createTextStudyJob(payload: { title: string; sourceText: string }): Promise<CreateStudyJobResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ...payload,
+      sourceType: "text"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Failed to queue text study job."));
+  }
+
+  return response.json() as Promise<CreateStudyJobResponse>;
 }
 
 export async function saveStudySet(
-  payload: GenerateStudySetRequest & GenerateStudySetResponse
+  payload: { title: string; sourceText: string; sourceType: "text" | "pdf"; sourceFileName?: string } & GenerateStudySetResponse
 ): Promise<StudySet> {
-  const studySets = readStoredStudySets();
-  const timestamp = new Date().toISOString();
-
-  const studySet: StudySet = {
-    id: crypto.randomUUID(),
-    title: payload.title,
-    sourceText: payload.sourceText ?? "",
-    sourceType: payload.sourceType,
-    sourceFileName: payload.sourceFileName,
-    summary: payload.summary,
-    studyGuide: payload.studyGuide,
-    keyConcepts: payload.keyConcepts,
-    flashcards: payload.flashcards.map((card, index) => ({
-      id: crypto.randomUUID(),
-      question: card.question,
-      answer: card.answer,
-      order: card.order ?? index + 1
-    })),
-    createdAt: timestamp,
-    updatedAt: timestamp
-  };
-
-  writeStoredStudySets([studySet, ...studySets]);
-  return studySet;
-}
-
-export async function deleteStudySet(id: string): Promise<void> {
-  const studySets = readStoredStudySets();
-  writeStoredStudySets(studySets.filter((studySet) => studySet.id !== id));
-
-  const sessions = readStoredExamSessions();
-  writeStoredExamSessions(sessions.filter((session) => session.studySetId !== id));
-}
-
-export async function evaluateExamTurn(
-  payload: EvaluateExamTurnRequest
-): Promise<EvaluateExamTurnResponse> {
-  const response = await fetch(`${API_BASE_URL}/study-sets/exam-turn`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -157,8 +159,114 @@ export async function evaluateExamTurn(
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(error?.message ?? "Failed to evaluate exam answer.");
+    throw new Error(await parseJsonError(response, "Failed to save study set."));
+  }
+
+  return response.json() as Promise<StudySet>;
+}
+
+export async function createPdfStudyJob(payload: { title: string }, sourceFile: File): Promise<CreateStudyJobResponse> {
+  const formData = new FormData();
+  formData.append("title", payload.title);
+  formData.append("sourceFile", sourceFile);
+
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs`, {
+    method: "POST",
+    body: formData,
+    headers: undefined
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Failed to queue PDF study job."));
+  }
+
+  return response.json() as Promise<CreateStudyJobResponse>;
+}
+
+export async function fetchStudyJob(jobId: string): Promise<GetStudyJobResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs/${jobId}`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load study job."));
+  }
+
+  return response.json() as Promise<GetStudyJobResponse>;
+}
+
+type StudyJobSubscriptionOptions = {
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+};
+
+export function subscribeToStudyJob(
+  jobId: string,
+  listener: (event: StudyJobEvent) => void,
+  options?: StudyJobSubscriptionOptions
+): () => void {
+  const eventTypes: StudyJobEvent["type"][] = [
+    "study-job:queued",
+    "study-job:progress",
+    "study-job:completed",
+    "study-job:failed"
+  ];
+  let socket: Socket | null = null;
+  let disposed = false;
+  const resubscribe = () => {
+    socket?.emit("study-job:subscribe", jobId);
+    options?.onConnect?.();
+  };
+  const handleDisconnect = () => {
+    options?.onDisconnect?.();
+  };
+
+  void getSocket().then((nextSocket) => {
+    if (disposed) {
+      return;
+    }
+
+    socket = nextSocket;
+    resubscribe();
+    socket.on("connect", resubscribe);
+    socket.on("disconnect", handleDisconnect);
+    eventTypes.forEach((eventType) => {
+      socket?.on(eventType, listener);
+    });
+  });
+
+  return () => {
+    disposed = true;
+    socket?.off("connect", resubscribe);
+    socket?.off("disconnect", handleDisconnect);
+    eventTypes.forEach((eventType) => {
+      socket?.off(eventType, listener);
+    });
+    socket?.emit("study-job:unsubscribe", jobId);
+  };
+}
+
+export async function deleteStudySet(id: string): Promise<void> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${id}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not delete the study set."));
+  }
+}
+
+export async function evaluateExamTurn(
+  payload: EvaluateExamTurnRequest
+): Promise<EvaluateExamTurnResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/exam-turn`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Failed to evaluate exam answer."));
   }
 
   return response.json() as Promise<EvaluateExamTurnResponse>;
@@ -169,18 +277,147 @@ export async function transcribeExamAnswer(audioBlob: Blob): Promise<string> {
   const extension = audioBlob.type.includes("mp4") ? "m4a" : audioBlob.type.includes("ogg") ? "ogg" : "webm";
   formData.append("audioFile", new File([audioBlob], `oral-answer.${extension}`, { type: audioBlob.type || "audio/webm" }));
 
-  const response = await fetch(`${API_BASE_URL}/study-sets/transcribe-answer`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/transcribe-answer`, {
     method: "POST",
-    body: formData
+    body: formData,
+    headers: undefined
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(error?.message ?? "Failed to transcribe oral answer.");
+    throw new Error(await parseJsonError(response, "Failed to transcribe oral answer."));
   }
 
   const payload = (await response.json()) as { transcript: string };
   return payload.transcript;
+}
+
+export async function fetchExamSessions(studySetId: string): Promise<ExamSession[]> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${studySetId}/exam-sessions`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load exam sessions."));
+  }
+
+  const payload = (await response.json()) as ListExamSessionsResponse;
+  return payload.items;
+}
+
+export async function fetchRescueAttempts(studySetId: string, examSessionId?: string): Promise<RescueAttempt[]> {
+  const searchParams = new URLSearchParams();
+
+  if (examSessionId) {
+    searchParams.set("examSessionId", examSessionId);
+  }
+
+  const response = await authenticatedFetch(
+    `${API_BASE_URL}/study-sets/${studySetId}/rescue-attempts${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load rescue attempts."));
+  }
+
+  const payload = (await response.json()) as ListRescueAttemptsResponse;
+  return payload.items;
+}
+
+export async function createRescueAttempt(studySetId: string, examSessionId: string): Promise<RescueAttempt> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${studySetId}/rescue-attempts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ examSessionId })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not start Rescue Mode."));
+  }
+
+  const payload = (await response.json()) as CreateRescueAttemptResponse;
+  return payload.attempt;
+}
+
+export async function submitRescueRetry(studySetId: string, rescueId: string, userAnswer: string): Promise<SubmitRescueRetryResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${studySetId}/rescue-attempts/${rescueId}/retry`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ userAnswer })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not submit rescue retry."));
+  }
+
+  return response.json() as Promise<SubmitRescueRetryResponse>;
+}
+
+export async function saveExamSession(studySetId: string, session: ExamSession): Promise<ExamSession> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${studySetId}/exam-sessions/${session.id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ session })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not save exam session."));
+  }
+
+  const payload = (await response.json()) as SaveExamSessionResponse;
+  return payload.session;
+}
+
+export async function fetchStudyJobOpsSummary(): Promise<StudyJobOpsSummaryResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs/ops/summary`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load queue operations summary."));
+  }
+
+  return response.json() as Promise<StudyJobOpsSummaryResponse>;
+}
+
+export async function retryStudyJob(jobId: string): Promise<RetryStudyJobResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs/${jobId}/retry`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not retry the study job."));
+  }
+
+  return response.json() as Promise<RetryStudyJobResponse>;
+}
+
+export async function recoverStaleStudyJobs(): Promise<RecoverStudyJobsResponse> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-jobs/ops/recover-stale`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not recover stale study jobs."));
+  }
+
+  return response.json() as Promise<RecoverStudyJobsResponse>;
+}
+
+export async function fetchSystemHealth() {
+  const response = await authenticatedFetch(`${API_BASE_URL}/health`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load system health."));
+  }
+
+  return response.json() as Promise<{
+    ok: boolean;
+    services: Record<string, string>;
+    queue: { waiting: number; active: number; completed: number; failed: number; delayed: number } | null;
+    worker: { updatedAt: string; queue?: string; concurrency?: number } | null;
+  }>;
 }
 
 export function createExamSession(studySet: StudySet, totalQuestionsTarget = 5): ExamSession {
@@ -198,23 +435,6 @@ export function createExamSession(studySet: StudySet, totalQuestionsTarget = 5):
     cumulativeScore: 0,
     totalQuestionsTarget
   };
-}
-
-export function getExamSession(studySetId: string): ExamSession | null {
-  return readStoredExamSessions().find((session) => session.studySetId === studySetId && !session.completed) ?? null;
-}
-
-export function listExamSessions(studySetId: string): ExamSession[] {
-  return readStoredExamSessions()
-    .filter((session) => session.studySetId === studySetId)
-    .sort((left, right) => (right.completedAt ?? right.startedAt).localeCompare(left.completedAt ?? left.startedAt));
-}
-
-export function saveExamSession(session: ExamSession): ExamSession {
-  const sessions = readStoredExamSessions();
-  const nextSessions = [session, ...sessions.filter((item) => item.id !== session.id)];
-  writeStoredExamSessions(nextSessions);
-  return session;
 }
 
 export function applyExamTurnResult(
@@ -281,24 +501,11 @@ function buildExamSummary(session: ExamSession): ExamSummary {
   };
 }
 
-async function sendPdfGenerationRequest(
-  payload: GenerateStudySetRequest,
-  sourceFile?: File | null
-): Promise<Response> {
-  if (payload.sourceType !== "pdf") {
-    throw new Error("PDF generation requires a PDF source.");
-  }
+export function mergeFlashcards(existing: Flashcard[], incoming: Flashcard[]) {
+  const seen = new Set(existing.map((card) => card.id));
+  return [...existing, ...incoming.filter((card) => !seen.has(card.id))];
+}
 
-  if (!sourceFile) {
-    throw new Error("Choose a PDF file before generating.");
-  }
-
-  const formData = new FormData();
-  formData.append("title", payload.title);
-  formData.append("sourceFile", sourceFile);
-
-  return fetch(`${API_BASE_URL}/study-sets/generate`, {
-    method: "POST",
-    body: formData
-  });
+export function isStudyJobTerminal(job: StudySetJob) {
+  return job.status === "completed" || job.status === "failed";
 }
