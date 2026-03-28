@@ -33,6 +33,11 @@ import {
   updateStudyJob
 } from "./services/studyJobRepository.js";
 
+type RankedDocument = Awaited<ReturnType<typeof queryNearestDocumentIds>>[number];
+type SemanticCandidateDocument = Awaited<ReturnType<typeof findSemanticCandidateDocumentsByIds>>[number];
+type SemanticCacheDocument = Awaited<ReturnType<typeof findSemanticCandidateDocuments>>[number];
+type EmbeddedChunk = Awaited<ReturnType<typeof embedTextChunks>>[number];
+
 async function setProgress(ownerId: string, jobId: string, stage: string, progressPercent: number) {
   const job = await updateStudyJob(ownerId, jobId, {
     status: "processing",
@@ -77,29 +82,29 @@ const worker = new Worker(
 
         if (queryChunks.length > 0) {
           const queryEmbeddings = await embedTextChunks(queryChunks);
-          const queryVector = averageEmbeddings(queryEmbeddings.map((item) => item.embedding));
+          const queryVector = averageEmbeddings(queryEmbeddings.map((item: EmbeddedChunk) => item.embedding));
           let semanticMatch: ReturnType<typeof selectSemanticMatch> | ReturnType<typeof findBestSemanticCandidate> | null = null;
 
           if (isPgVectorReady()) {
             const rankedIds = await queryNearestDocumentIds("text", ownerId, queryVector, env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-            const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item) => item.id))).filter(
-              (candidate) => candidate.hash !== documentHash
+            const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item: RankedDocument) => item.id))).filter(
+              (candidate: SemanticCandidateDocument) => candidate.hash !== documentHash
             );
             semanticMatch = selectSemanticMatch({
               title,
               candidates: rankedCandidates
-                .map((candidate) => ({
-                  similarity: rankedIds.find((item) => item.id === candidate.documentId)?.similarity ?? 0,
+                .map((candidate: SemanticCandidateDocument) => ({
+                  similarity: rankedIds.find((item: RankedDocument) => item.id === candidate.documentId)?.similarity ?? 0,
                   candidate
                 }))
-                .filter((item) => item.similarity > 0)
+                .filter((item: { similarity: number; candidate: SemanticCandidateDocument }) => item.similarity > 0)
             });
           } else {
             const candidates = await findSemanticCandidateDocuments(ownerId, "text", env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
             semanticMatch = findBestSemanticCandidate({
               title,
               queryEmbeddings,
-              candidates: candidates.filter((candidate) => candidate.hash !== documentHash)
+              candidates: candidates.filter((candidate: SemanticCacheDocument) => candidate.hash !== documentHash)
             });
           }
 
@@ -190,29 +195,29 @@ const worker = new Worker(
 
       if (queryChunks.length > 0) {
         const queryEmbeddings = await embedTextChunks(queryChunks);
-        const queryVector = averageEmbeddings(queryEmbeddings.map((item) => item.embedding));
+        const queryVector = averageEmbeddings(queryEmbeddings.map((item: EmbeddedChunk) => item.embedding));
         let semanticMatch: ReturnType<typeof selectSemanticMatch> | ReturnType<typeof findBestSemanticCandidate> | null = null;
 
         if (isPgVectorReady()) {
           const rankedIds = await queryNearestDocumentIds("pdf", ownerId, queryVector, env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-          const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item) => item.id))).filter(
-            (candidate) => candidate.hash !== documentHash
+          const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item: RankedDocument) => item.id))).filter(
+            (candidate: SemanticCandidateDocument) => candidate.hash !== documentHash
           );
           semanticMatch = selectSemanticMatch({
             title,
             candidates: rankedCandidates
-              .map((candidate) => ({
-                similarity: rankedIds.find((item) => item.id === candidate.documentId)?.similarity ?? 0,
+              .map((candidate: SemanticCandidateDocument) => ({
+                similarity: rankedIds.find((item: RankedDocument) => item.id === candidate.documentId)?.similarity ?? 0,
                 candidate
               }))
-              .filter((item) => item.similarity > 0)
+              .filter((item: { similarity: number; candidate: SemanticCandidateDocument }) => item.similarity > 0)
           });
         } else {
           const candidates = await findSemanticCandidateDocuments(ownerId, "pdf", env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
           semanticMatch = findBestSemanticCandidate({
             title,
             queryEmbeddings,
-            candidates: candidates.filter((candidate) => candidate.hash !== documentHash)
+            candidates: candidates.filter((candidate: SemanticCacheDocument) => candidate.hash !== documentHash)
           });
         }
 

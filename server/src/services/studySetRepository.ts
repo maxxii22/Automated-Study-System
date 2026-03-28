@@ -267,7 +267,7 @@ export async function cloneStudySetToOwner(studySetId: string, ownerId: string) 
       studyGuide: sourceStudySet.studyGuide,
       keyConcepts: sourceStudySet.keyConcepts,
       flashcards: {
-        create: sourceStudySet.flashcards.map((card) => ({
+        create: sourceStudySet.flashcards.map((card: (typeof sourceStudySet.flashcards)[number]) => ({
           question: card.question,
           answer: card.answer,
           order: card.order

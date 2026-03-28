@@ -435,7 +435,7 @@ export async function findSemanticCandidateDocuments(ownerId: string, sourceType
         summary: record.studySet.summary,
         studyGuide: record.studySet.studyGuide,
         keyConcepts: record.studySet.keyConcepts,
-        flashcards: record.studySet.flashcards.map((card) => ({
+        flashcards: record.studySet.flashcards.map((card: (typeof record.studySet.flashcards)[number]) => ({
           id: card.id,
           question: card.question,
           answer: card.answer,
@@ -445,11 +445,11 @@ export async function findSemanticCandidateDocuments(ownerId: string, sourceType
         createdAt: record.studySet.createdAt.toISOString(),
         updatedAt: record.studySet.updatedAt.toISOString()
       },
-      embeddings: record.embeddings.map((embedding) => ({
+      embeddings: record.embeddings.map((embedding: (typeof record.embeddings)[number]) => ({
         chunkIndex: embedding.chunkIndex,
         content: embedding.content,
         embedding: Array.isArray(embedding.embedding)
-          ? embedding.embedding.filter((value): value is number => typeof value === "number")
+          ? embedding.embedding.filter((value: unknown): value is number => typeof value === "number")
           : []
       }))
     }));
@@ -502,7 +502,12 @@ export async function findSemanticCandidateDocumentsByIds(ownerId: string, ids: 
 
   return records
     .filter((record): record is typeof record & { studySet: NonNullable<typeof record.studySet> } => Boolean(record.studySet))
-    .sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+    .sort(
+      (
+        left: (typeof records)[number] & { studySet: NonNullable<(typeof records)[number]["studySet"]> },
+        right: (typeof records)[number] & { studySet: NonNullable<(typeof records)[number]["studySet"]> }
+      ) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    )
     .map((record) => ({
       documentId: record.id,
       hash: record.hash,
@@ -517,7 +522,7 @@ export async function findSemanticCandidateDocumentsByIds(ownerId: string, ids: 
         summary: record.studySet.summary,
         studyGuide: record.studySet.studyGuide,
         keyConcepts: record.studySet.keyConcepts,
-        flashcards: record.studySet.flashcards.map((card) => ({
+        flashcards: record.studySet.flashcards.map((card: (typeof record.studySet.flashcards)[number]) => ({
           id: card.id,
           question: card.question,
           answer: card.answer,
@@ -527,11 +532,11 @@ export async function findSemanticCandidateDocumentsByIds(ownerId: string, ids: 
         createdAt: record.studySet.createdAt.toISOString(),
         updatedAt: record.studySet.updatedAt.toISOString()
       },
-      embeddings: record.embeddings.map((embedding) => ({
+      embeddings: record.embeddings.map((embedding: (typeof record.embeddings)[number]) => ({
         chunkIndex: embedding.chunkIndex,
         content: embedding.content,
         embedding: Array.isArray(embedding.embedding)
-          ? embedding.embedding.filter((value): value is number => typeof value === "number")
+          ? embedding.embedding.filter((value: unknown): value is number => typeof value === "number")
           : []
       }))
     }));

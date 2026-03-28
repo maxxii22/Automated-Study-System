@@ -391,7 +391,7 @@ export async function recoverStaleStudyJobs(isAdmin: boolean, ownerId?: string):
   const staleBefore = new Date(Date.now() - env.STUDY_JOB_STALE_AFTER_MS);
   const staleJobs = isAdmin
     ? await listRecoverableStaleStudyJobs(staleBefore, 20)
-    : (await listStaleProcessingStudyJobs(ownerId!, staleBefore, 20)).map((job) => ({ id: job.id, ownerId: ownerId! }));
+    : (await listStaleProcessingStudyJobs(ownerId!, staleBefore, 20)).map((job: StudySetJob) => ({ id: job.id, ownerId: ownerId! }));
   const recovered: StudySetJob[] = [];
 
   for (const staleJob of staleJobs) {
