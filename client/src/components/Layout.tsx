@@ -190,6 +190,9 @@ export function Layout({ children }: PropsWithChildren) {
           {children}
         </div>
       </main>
+      <footer className={isHome ? "app-credit app-credit-home" : "app-credit"}>
+        <span>Developed by Maxxii inc</span>
+      </footer>
     </div>
   );
 }

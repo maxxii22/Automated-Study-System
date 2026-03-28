@@ -215,6 +215,7 @@ export function ExamPage() {
 
     return `Question ${Math.min(session.turns.length + 1, session.totalQuestionsTarget)} of ${session.totalQuestionsTarget}`;
   }, [activeRescue, session]);
+  const currentQuestionNumber = session ? Math.min(session.turns.length + 1, session.totalQuestionsTarget) : 1;
 
   async function handleRescueRetry() {
     if (!studySet || !activeRescue || !rescueAnswer.trim()) {
@@ -466,7 +467,7 @@ export function ExamPage() {
 
   return (
     <section className="page-grid exam-page">
-      <article className="panel exam-panel">
+      <article className={activeRescue && activeRescue.status !== "recovered" ? "panel exam-panel is-rescue-active" : "panel exam-panel"}>
         <div className="section-header">
           <div>
             <p className="eyebrow">Adaptive Oral Exam</p>
@@ -524,10 +525,12 @@ export function ExamPage() {
           <>
             <p className="muted">{progressLabel}</p>
             <div className="chip-row exam-mode-row">
-              <span className="chip">{isRescueModeEnabled ? "Rescue Mode On" : "Rescue Mode Off"}</span>
+              <span className={isRescueModeEnabled ? "exam-mode-chip is-active" : "exam-mode-chip"}>
+                {isRescueModeEnabled ? "Rescue Mode Active" : "Rescue Mode Off"}
+              </span>
             </div>
             {isLoadingRescue ? (
-              <section className="rescue-panel">
+              <section className="rescue-panel rescue-panel-loading">
                 <p className="eyebrow">Rescue Mode</p>
                 <h3>Preparing your recovery step.</h3>
                 <p className="muted">We’re building a focused explanation before you move to the next exam question.</p>
@@ -538,8 +541,13 @@ export function ExamPage() {
               <section className="rescue-panel">
                 <div className="section-header rescue-panel-header">
                   <div>
-                    <p className="eyebrow">Rescue Mode</p>
+                    <p className="eyebrow rescue-mode-kicker">Rescue Mode Active</p>
                     <h3>{activeRescue.status === "recovered" ? "Concept recovered." : `Let’s fix ${activeRescue.concept}.`}</h3>
+                    <p className="rescue-mode-copy">
+                      {activeRescue.status === "recovered"
+                        ? "You’re back on track. Continue when you’re ready."
+                        : "Let’s fix this before continuing with the next exam question."}
+                    </p>
                   </div>
                   {activeRescue.status === "recovered" ? (
                     <button
@@ -556,22 +564,22 @@ export function ExamPage() {
                   ) : null}
                 </div>
 
-                <div className="rescue-grid">
-                  <article className="rescue-block">
-                    <p className="flashcard-label">You missed</p>
+                <article className="rescue-flow-card">
+                  <div className="rescue-flow-section">
+                    <p className="flashcard-label">What went wrong</p>
                     <p>{activeRescue.diagnosis}</p>
-                  </article>
-                  <article className="rescue-block">
-                    <p className="flashcard-label">Quick Reset</p>
+                  </div>
+                  <div className="rescue-flow-section">
+                    <p className="flashcard-label">Quick fix</p>
                     <p>{activeRescue.microLesson}</p>
-                  </article>
+                  </div>
                   {activeRescue.sourceSupport ? (
-                    <article className="rescue-block rescue-block-wide">
-                      <p className="flashcard-label">From Your Notes</p>
+                    <div className="rescue-flow-section rescue-flow-support">
+                      <p className="flashcard-label">From your notes</p>
                       <p>{activeRescue.sourceSupport}</p>
-                    </article>
+                    </div>
                   ) : null}
-                </div>
+                </article>
 
                 {activeRescue.retryFeedback ? (
                   <article className="rescue-block rescue-feedback-block">
@@ -588,6 +596,7 @@ export function ExamPage() {
                 {activeRescue.status !== "recovered" ? (
                   <div className="field rescue-form">
                     <label htmlFor="rescue-answer">{activeRescue.retryQuestion.prompt}</label>
+                    <p className="muted small-copy rescue-retry-cue">Try again now to lock it in before moving on.</p>
                     <textarea
                       id="rescue-answer"
                       rows={5}
@@ -623,14 +632,17 @@ export function ExamPage() {
             ) : null}
 
             <article className="exam-question-card">
-              <p className="flashcard-label">Current Question</p>
+              <div className="exam-question-topline">
+                <p className="flashcard-label">Current Question</p>
+                <span className="exam-question-progress-chip">Question {currentQuestionNumber} of {session.totalQuestionsTarget}</span>
+              </div>
               <h2>{session.currentQuestion.prompt}</h2>
               {session.currentQuestion.focusTopic ? (
-                <p className="muted">Focus topic: {session.currentQuestion.focusTopic}</p>
+                <p className="muted exam-question-focus">Focus topic: {session.currentQuestion.focusTopic}</p>
               ) : null}
             </article>
 
-            <form className="field" onSubmit={handleSubmit}>
+            <form className={activeRescue && activeRescue.status !== "recovered" ? "field exam-answer-form is-muted" : "field exam-answer-form"} onSubmit={handleSubmit}>
               <label htmlFor="exam-answer">Your Answer</label>
               {recordingHint ? <p className="muted small-copy exam-audio-hint">{recordingHint}</p> : null}
               <div className="exam-answer-wrap">
@@ -639,7 +651,7 @@ export function ExamPage() {
                   id="exam-answer"
                   rows={8}
                   value={answer}
-                  placeholder="Type your answer, or use the microphone to record an oral response."
+                  placeholder="Explain in your own words, or use the microphone to record an oral response."
                   onChange={(event) => setAnswer(event.target.value)}
                 />
                 <button
@@ -697,14 +709,25 @@ export function ExamPage() {
           <section className="feedback-panel">
             <h3>Latest Feedback</h3>
             <p className="muted">Score: {latestTurn.score}% • {latestTurn.classification}</p>
-            <p>{latestTurn.feedback}</p>
-            <p className="flashcard-label">Ideal Answer</p>
-            <p>{latestTurn.idealAnswer}</p>
+            <div className="feedback-flow">
+              <article className="feedback-block">
+                <p className="flashcard-label">Your answer</p>
+                <p>{latestTurn.userAnswer}</p>
+              </article>
+              <article className="feedback-block">
+                <p className="flashcard-label">What you should know</p>
+                <p>{latestTurn.feedback}</p>
+              </article>
+              <article className="feedback-block feedback-block-ideal">
+                <p className="flashcard-label">Ideal answer</p>
+                <p>{latestTurn.idealAnswer}</p>
+              </article>
+            </div>
           </section>
         ) : null}
       </article>
 
-      <article className="panel">
+      <article className="panel exam-history-panel">
         <h2>Past Exam Sessions</h2>
         {isLoadingHistory ? (
           <p className="muted">Loading exam history...</p>
