@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import type { ExamSession, RescueAttempt, StudySet } from "@automated-study-system/shared";
 
@@ -17,6 +17,38 @@ import {
   transcribeExamAnswer
 } from "../lib/api";
 
+function getExamRescueModeStorageKey(studySetId: string) {
+  return `study-sphere.exam-rescue-mode:${studySetId}`;
+}
+
+function readSavedExamRescueMode(studySetId: string) {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  return window.sessionStorage.getItem(getExamRescueModeStorageKey(studySetId)) !== "off";
+}
+
+function writeSavedExamRescueMode(studySetId: string, enabled: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(getExamRescueModeStorageKey(studySetId), enabled ? "on" : "off");
+}
+
+function toExamLoadError(message: string | null | undefined) {
+  if (!message) {
+    return "We couldn't prepare your oral exam right now.";
+  }
+
+  if (/failed to fetch|network|networkerror/i.test(message)) {
+    return "We couldn't reach the exam service right now. Please try again in a moment.";
+  }
+
+  return message;
+}
+
 function MicrophoneIcon() {
   return (
     <svg aria-hidden="true" fill="none" height="18" viewBox="0 0 24 24" width="18">
@@ -30,7 +62,9 @@ function MicrophoneIcon() {
 
 export function ExamPage() {
   const { id = "" } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const rescueQueryParam = useMemo(() => new URLSearchParams(location.search).get("rescue"), [location.search]);
   const [studySet, setStudySet] = useState<StudySet | null>(null);
   const [session, setSession] = useState<ExamSession | null>(null);
   const [history, setHistory] = useState<ExamSession[]>([]);
@@ -51,6 +85,9 @@ export function ExamPage() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const answerBeforeRecordingRef = useRef("");
+  const [isRescueModeEnabled, setIsRescueModeEnabled] = useState(() =>
+    rescueQueryParam === "off" ? false : rescueQueryParam === "on" ? true : readSavedExamRescueMode(id)
+  );
 
   function selectActiveRescueAttempt(attempts: RescueAttempt[]) {
     return attempts.find((attempt) => attempt.status === "open") ?? attempts.find((attempt) => attempt.status === "needs_more_help") ?? null;
@@ -60,15 +97,22 @@ export function ExamPage() {
     return classification === "weak" || (classification === "partial" && score < 60);
   }
 
+  useEffect(() => {
+    const nextMode = rescueQueryParam === "off" ? false : rescueQueryParam === "on" ? true : readSavedExamRescueMode(id);
+    setIsRescueModeEnabled(nextMode);
+    writeSavedExamRescueMode(id, nextMode);
+  }, [id, rescueQueryParam]);
+
   async function loadExamPage() {
     const [loadedStudySet, sessions] = await Promise.all([fetchStudySet(id), fetchExamSessions(id)]);
     setStudySet(loadedStudySet);
     const existingSession = sessions.find((item) => !item.completed) ?? null;
     const nextSession = existingSession ?? (await saveExamSession(loadedStudySet.id, createExamSession(loadedStudySet)));
-    const rescueAttempts = await fetchRescueAttempts(loadedStudySet.id, nextSession.id);
+    const rescueAttempts = isRescueModeEnabled ? await fetchRescueAttempts(loadedStudySet.id, nextSession.id) : [];
+    const nextHistory = existingSession ? sessions : [nextSession, ...sessions];
 
     setSession(nextSession);
-    setHistory(sessions.length > 0 ? sessions : [nextSession]);
+    setHistory(nextHistory);
     setActiveRescue(selectActiveRescueAttempt(rescueAttempts));
     setRescueAnswer("");
     setRescueError(null);
@@ -88,7 +132,7 @@ export function ExamPage() {
     try {
       await loadExamPage();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not load exam.");
+      setError(toExamLoadError(requestError instanceof Error ? requestError.message : "Could not load exam."));
       setIsLoadingHistory(false);
     } finally {
       setIsRetryingLoad(false);
@@ -132,7 +176,7 @@ export function ExamPage() {
       })
       .catch((requestError) => {
         if (!ignore) {
-          setError(requestError instanceof Error ? requestError.message : "Could not load exam.");
+          setError(toExamLoadError(requestError instanceof Error ? requestError.message : "Could not load exam."));
           setIsLoadingHistory(false);
         }
       });
@@ -142,7 +186,7 @@ export function ExamPage() {
       mediaRecorderRef.current?.stop();
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [id]);
+  }, [id, isRescueModeEnabled]);
 
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
@@ -231,7 +275,7 @@ export function ExamPage() {
       setAnswer("");
       setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
 
-      if (!shouldEnd && shouldTriggerRescue(response.result.classification, response.result.score)) {
+      if (isRescueModeEnabled && !shouldEnd && shouldTriggerRescue(response.result.classification, response.result.score)) {
         setIsLoadingRescue(true);
         setActiveRescue(null);
         setRescueAnswer("");
@@ -430,6 +474,7 @@ export function ExamPage() {
         {session.completed ? (
           <section className="result-block">
             <h2>Session Complete</h2>
+            <p className="muted">{isRescueModeEnabled ? "Rescue Mode was enabled for this session." : "Rescue Mode was turned off for this session."}</p>
             <p className="muted">
               Average score: {session.summary?.averageScore ?? 0}% across {session.summary?.totalQuestions ?? 0} questions.
             </p>
@@ -472,6 +517,9 @@ export function ExamPage() {
         ) : (
           <>
             <p className="muted">{progressLabel}</p>
+            <div className="chip-row exam-mode-row">
+              <span className="chip">{isRescueModeEnabled ? "Rescue Mode On" : "Rescue Mode Off"}</span>
+            </div>
             {isLoadingRescue ? (
               <section className="rescue-panel">
                 <p className="eyebrow">Rescue Mode</p>

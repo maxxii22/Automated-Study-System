@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 import type { Session, User } from "@supabase/supabase-js";
 
-import { getAccessToken, supabase } from "../lib/supabase";
+import { getCachedSession, supabase } from "../lib/supabase";
 
 type AuthContextValue = {
   user: User | null;
@@ -23,12 +23,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let ignore = false;
+    const initialSession = getCachedSession();
 
-    void supabase.auth.getSession().then(async ({ data }) => {
+    if (initialSession) {
+      setSession(initialSession);
+      setUser(initialSession.user ?? null);
+      setAccessToken(initialSession.access_token ?? null);
+      setIsLoading(false);
+    }
+
+    void supabase.auth.getSession().then(({ data }) => {
       if (!ignore) {
         setSession(data.session);
         setUser(data.session?.user ?? null);
-        setAccessToken((await getAccessToken()) ?? null);
+        setAccessToken(data.session?.access_token ?? null);
         setIsLoading(false);
       }
     });

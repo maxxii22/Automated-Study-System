@@ -29,6 +29,48 @@ const JOB_STAGE_LABELS: Record<string, string> = {
   failed: "Failed"
 };
 
+function toUserFacingGenerationError(message: string | null | undefined) {
+  const fallback = "Something went wrong while preparing your study pack. Please try again.";
+
+  if (!message) {
+    return fallback;
+  }
+
+  const normalized = message.trim();
+
+  if (
+    /resource_exhausted|quota|rate limit|429|free_tier_requests|please retry in|billing details/i.test(normalized)
+  ) {
+    return "Study generation is temporarily busy right now. Please retry in a few minutes.";
+  }
+
+  if (/access denied|accessdenied/i.test(normalized)) {
+    return "The uploaded file could not be stored right now. Please try again in a moment.";
+  }
+
+  if (/enoent|no such file or directory/i.test(normalized)) {
+    return "The uploaded file could not be read by the worker. Please retry generation.";
+  }
+
+  if (/not found for api version|generatecontent/i.test(normalized)) {
+    return "The selected AI model is not available for this action right now. Please try again shortly.";
+  }
+
+  if (/failed to fetch|networkerror|network request failed/i.test(normalized)) {
+    return "We couldn't reach the server right now. Please check your connection and try again.";
+  }
+
+  if (/session is invalid|sign in again|expired|401|403/i.test(normalized)) {
+    return "Your session expired. Please sign in again and retry.";
+  }
+
+  if (/study generation request failed|job failed|request failed/i.test(normalized)) {
+    return "Study generation could not be completed right now. Please retry in a moment.";
+  }
+
+  return normalized.length > 120 ? fallback : normalized;
+}
+
 function formatPdfTitle(fileName: string) {
   return fileName
     .replace(/\.pdf$/i, "")
@@ -120,6 +162,8 @@ export function CreateStudySetPage() {
   const navigate = useNavigate();
   const pasteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const pasteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pdfTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const lastTextPayloadRef = useRef<{ title: string; sourceText: string } | null>(null);
   const lastPdfTitleRef = useRef<string | null>(null);
   const [title, setTitle] = useState("");
@@ -134,6 +178,7 @@ export function CreateStudySetPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const unsubscribeJobRef = useRef<() => void>(() => {});
@@ -168,7 +213,7 @@ export function CreateStudySetPage() {
     storeActiveJobId(null);
     setIsSocketFallbackPolling(false);
     setIsRestoringJob(false);
-    setError(message ?? "The study job failed.");
+    setError(toUserFacingGenerationError(message ?? "The study job failed."));
   }, []);
 
   const subscribeToActiveJob = useCallback(
@@ -292,6 +337,22 @@ export function CreateStudySetPage() {
     setError(null);
   }
 
+  function applyPdfSelection() {
+    if (!sourceFile) {
+      setIsPdfModalOpen(false);
+      return;
+    }
+
+    const nextTitle = formatPdfTitle(sourceFile.name);
+    setTitle(nextTitle);
+    lastPdfTitleRef.current = nextTitle;
+    setIsPdfModalOpen(false);
+  }
+
+  function openPdfPicker() {
+    pdfInputRef.current?.click();
+  }
+
   async function retryLastGeneration() {
     setError(null);
     setResult(null);
@@ -327,7 +388,7 @@ export function CreateStudySetPage() {
 
       subscribeToActiveJob(created.job.id);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Could not retry generation.");
+      setError(toUserFacingGenerationError(retryError instanceof Error ? retryError.message : "Could not retry generation."));
     } finally {
       setIsSubmitting(false);
     }
@@ -372,7 +433,7 @@ export function CreateStudySetPage() {
   useEffect(() => clearJobSubscription, [clearJobSubscription]);
 
   useEffect(() => {
-    if (!isPasteModalOpen) {
+    if (!isPasteModalOpen && !isPdfModalOpen) {
       return;
     }
 
@@ -380,12 +441,20 @@ export function CreateStudySetPage() {
     document.body.style.overflow = "hidden";
 
     const focusTimer = window.setTimeout(() => {
-      pasteTextareaRef.current?.focus();
+      if (isPasteModalOpen) {
+        pasteTextareaRef.current?.focus();
+        return;
+      }
+
+      if (isPdfModalOpen) {
+        pdfInputRef.current?.focus();
+      }
     }, 0);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsPasteModalOpen(false);
+        setIsPdfModalOpen(false);
       }
     };
 
@@ -395,9 +464,15 @@ export function CreateStudySetPage() {
       document.body.style.overflow = previousOverflow;
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown);
-      pasteTriggerRef.current?.focus();
+      if (isPasteModalOpen) {
+        pasteTriggerRef.current?.focus();
+      }
+
+      if (isPdfModalOpen) {
+        pdfTriggerRef.current?.focus();
+      }
     };
-  }, [isPasteModalOpen]);
+  }, [isPasteModalOpen, isPdfModalOpen]);
 
   async function handleSave() {
     if (!result) {
@@ -422,7 +497,7 @@ export function CreateStudySetPage() {
 
       navigate(`/study-sets/${savedStudySet.id}`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save the study set.");
+      setError(toUserFacingGenerationError(saveError instanceof Error ? saveError.message : "Could not save the study set."));
     } finally {
       setIsSaving(false);
     }
@@ -493,7 +568,7 @@ export function CreateStudySetPage() {
         subscribeToActiveJob(created.job.id);
       }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Something went wrong.");
+      setError(toUserFacingGenerationError(submitError instanceof Error ? submitError.message : "Something went wrong."));
     } finally {
       setIsSubmitting(false);
     }
@@ -525,7 +600,10 @@ export function CreateStudySetPage() {
             <button
               className={sourceType === "pdf" ? "source-option-card active" : "source-option-card"}
               type="button"
-              onClick={() => setSourceType("pdf")}
+              onClick={() => {
+                setSourceType("pdf");
+                setIsPdfModalOpen(true);
+              }}
             >
               <span className="source-option-icon">PDF</span>
               <span className="source-option-title">Upload PDF</span>
@@ -535,7 +613,7 @@ export function CreateStudySetPage() {
         </div>
 
         <div className="field">
-          <label htmlFor="title">Study Set Title</label>
+          <label htmlFor="title">{sourceType === "pdf" ? "PDF Title" : "Study Set Title"}</label>
           <input
             id="title"
             value={title}
@@ -587,6 +665,7 @@ export function CreateStudySetPage() {
             <input
               className="pdf-file-input"
               id="sourceFile"
+              ref={pdfInputRef}
               type="file"
               accept="application/pdf,.pdf"
               onChange={(event) => {
@@ -594,26 +673,29 @@ export function CreateStudySetPage() {
                 setSourceFile(selectedFile);
               }}
             />
-            <label className="content-trigger pdf-file-trigger" htmlFor="sourceFile">
-              {sourceFile ? "Choose a different PDF" : "Choose PDF"}
-            </label>
-            <p className="muted small-copy">
-              Upload lecture notes, textbook sections, or class handouts as a PDF up to 10 MB.
-            </p>
-            {sourceFile ? (
-              <div className="content-preview">
-                <p className="muted small-copy">Selected PDF:</p>
-                <p className="file-pill">{sourceFile.name}</p>
-                {!title.trim() ? (
-                  <p className="muted small-copy">Suggested title: {formatPdfTitle(sourceFile.name)}</p>
-                ) : null}
+            <div className="content-preview pdf-summary-preview">
+              <p className="muted small-copy">
+                {sourceFile ? `PDF title: ${formatPdfTitle(sourceFile.name)}` : "No PDF uploaded yet."}
+              </p>
+              <p className="muted small-copy">
+                {sourceFile ? "PDF uploaded and ready for generation." : "Open the uploader to choose a PDF for this study set."}
+              </p>
+              {sourceFile ? (
                 <div className="inline-action-row">
+                  <button
+                    className="secondary-button compact-button"
+                    type="button"
+                    onClick={() => setIsPdfModalOpen(true)}
+                    ref={pdfTriggerRef}
+                  >
+                    Change PDF
+                  </button>
                   <button className="secondary-button compact-button" type="button" onClick={clearPdfSelection}>
                     Remove PDF
                   </button>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         )}
 
@@ -779,6 +861,49 @@ export function CreateStudySetPage() {
 
             <div className="content-modal-actions">
               <button className="primary-button" type="button" onClick={() => setIsPasteModalOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sourceType === "pdf" && isPdfModalOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsPdfModalOpen(false)}>
+          <div
+            aria-modal="true"
+            className="content-modal pdf-upload-modal"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="content-modal-header">
+              <div>
+                <h2>Please upload your PDF</h2>
+                <p className="muted">We&apos;ll turn your document into a saved study pack with guides, flashcards, and exam practice.</p>
+              </div>
+              <button className="modal-close" type="button" onClick={() => setIsPdfModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <button className="pdf-upload-dropzone" type="button" onClick={openPdfPicker}>
+              <span className="pdf-upload-icon" aria-hidden="true">
+                Upload
+              </span>
+              <strong>{sourceFile ? "Choose a different PDF" : "Click to upload your PDF"}</strong>
+              <span>{sourceFile ? sourceFile.name : "Lecture notes, handouts, and textbook sections up to 10 MB."}</span>
+            </button>
+
+            {sourceFile ? (
+              <div className="pdf-upload-status">
+                <p className="flashcard-label">Ready</p>
+                <p>PDF title: {formatPdfTitle(sourceFile.name)}</p>
+                <p className="muted small-copy">PDF uploaded and ready for generation.</p>
+              </div>
+            ) : null}
+
+            <div className="content-modal-actions">
+              <button className="primary-button" type="button" onClick={applyPdfSelection} disabled={!sourceFile}>
                 Done
               </button>
             </div>

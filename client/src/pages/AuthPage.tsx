@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../components/AuthProvider";
@@ -6,18 +6,125 @@ import { supabase } from "../lib/supabase";
 
 type AuthMode = "signin" | "signup";
 
+function buildEmailRedirectUrl() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return new URL("/auth?mode=signin", window.location.origin).toString();
+}
+
+function toAuthFeedbackError(message: string | null | undefined) {
+  if (!message) {
+    return "We couldn't complete that auth step. Please try again.";
+  }
+
+  const normalized = message.trim();
+
+  if (/expired|invalid|otp_expired|token/i.test(normalized)) {
+    return "This verification link is no longer valid. Request a new sign-up email and try again.";
+  }
+
+  if (/failed to fetch|network/i.test(normalized)) {
+    return "We couldn't finish verification right now. Check your connection and try the link again.";
+  }
+
+  return normalized.length > 140 ? "We couldn't complete email verification. Please try signing in again." : normalized;
+}
+
 export function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isLoading } = useAuth();
+  const handledCodeRef = useRef<string | null>(null);
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHandlingEmailLink, setIsHandlingEmailLink] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const destination = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/saved";
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const modeParam = searchParams.get("mode");
+    const code = searchParams.get("code");
+    const queryError = searchParams.get("error_description") ?? searchParams.get("error");
+    const hashError = hashParams.get("error_description") ?? hashParams.get("error");
+
+    if (modeParam === "signin" || modeParam === "signup") {
+      setMode(modeParam);
+    }
+
+    if (searchParams.get("verified") === "1") {
+      setMode("signin");
+      setError(null);
+      setMessage("Your email has been verified. Sign in now.");
+    }
+
+    if (!code && (queryError || hashError)) {
+      setMode("signin");
+      setMessage(null);
+      setError(toAuthFeedbackError(queryError ?? hashError));
+    }
+  }, [location.hash, location.search]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const code = searchParams.get("code");
+
+    if (!code || handledCodeRef.current === code) {
+      return;
+    }
+
+    handledCodeRef.current = code;
+
+    let ignore = false;
+
+    const confirmEmail = async () => {
+      try {
+        setIsHandlingEmailLink(true);
+        setError(null);
+        setMessage(null);
+
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (exchangeError) {
+          throw exchangeError;
+        }
+
+        const confirmedEmail = data.session?.user.email;
+
+        if (confirmedEmail && !ignore) {
+          setEmail(confirmedEmail);
+        }
+
+        await supabase.auth.signOut();
+
+        if (!ignore) {
+          navigate("/auth?mode=signin&verified=1", { replace: true, state: location.state });
+        }
+      } catch (confirmationError) {
+        if (!ignore) {
+          navigate("/auth?mode=signin", { replace: true, state: location.state });
+          setError(toAuthFeedbackError(confirmationError instanceof Error ? confirmationError.message : null));
+        }
+      } finally {
+        if (!ignore) {
+          setIsHandlingEmailLink(false);
+        }
+      }
+    };
+
+    void confirmEmail();
+
+    return () => {
+      ignore = true;
+    };
+  }, [location.search, location.state, navigate]);
 
   if (!isLoading && user) {
     return <Navigate replace to={destination} />;
@@ -31,16 +138,25 @@ export function AuthPage() {
 
     try {
       if (mode === "signup") {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email,
-          password
+          password,
+          options: {
+            emailRedirectTo: buildEmailRedirectUrl()
+          }
         });
 
         if (signUpError) {
           throw signUpError;
         }
 
-        setMessage("Check your email to confirm your account, then sign in.");
+        if (data.session) {
+          navigate(destination, { replace: true });
+          return;
+        }
+
+        setMessage("Check your email to verify your account. We’ll bring you back here to sign in.");
+        setMode("signin");
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -97,6 +213,13 @@ export function AuthPage() {
               : "We only need a few basics to create your account and secure your saved work."}
           </p>
         </div>
+
+        {isHandlingEmailLink ? (
+          <div className="inline-feedback-warning">
+            <p className="flashcard-label">Verifying Email</p>
+            <p className="muted">We&apos;re confirming your email link and getting sign-in ready.</p>
+          </div>
+        ) : null}
 
         <form className="field auth-form" onSubmit={handleSubmit}>
           <label htmlFor="auth-email">Email</label>

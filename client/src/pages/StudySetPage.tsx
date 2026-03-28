@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import type { Flashcard, RescueAttempt, StudySet } from "@automated-study-system/shared";
@@ -6,6 +6,18 @@ import type { Flashcard, RescueAttempt, StudySet } from "@automated-study-system
 import { StatePanel } from "../components/StatePanel";
 import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
 import { fetchExamSessions, fetchRescueAttempts, fetchStudySet, fetchStudySetFlashcards, mergeFlashcards } from "../lib/api";
+
+function toStudySetLoadError(message: string | null | undefined) {
+  if (!message) {
+    return "We couldn't load this study set right now.";
+  }
+
+  if (/failed to fetch|network|networkerror/i.test(message)) {
+    return "We couldn't reach the study-set service right now. Please try again in a moment.";
+  }
+
+  return message;
+}
 
 const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard }) {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -37,6 +49,11 @@ const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard })
 export function StudySetPage() {
   const { id = "" } = useParams();
   const location = useLocation();
+  const focusConcept = useMemo(() => {
+    return typeof (location.state as { focusConcept?: string } | null)?.focusConcept === "string"
+      ? (location.state as { focusConcept?: string }).focusConcept ?? null
+      : null;
+  }, [location.state]);
   const [studySet, setStudySet] = useState<StudySet | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardCursor, setFlashcardCursor] = useState<string | null>(null);
@@ -68,12 +85,7 @@ export function StudySetPage() {
     setFlashcards(data.flashcards);
     setFlashcardCursor(data.flashcardCount > data.flashcards.length ? data.flashcards.at(-1)?.id ?? null : null);
     setHasMoreFlashcards(data.flashcardCount > data.flashcards.length);
-    const preferredConcept =
-      typeof (location.state as { focusConcept?: string } | null)?.focusConcept === "string"
-        ? (location.state as { focusConcept?: string }).focusConcept
-        : null;
-
-    setActiveConcept(preferredConcept && data.keyConcepts.includes(preferredConcept) ? preferredConcept : null);
+    setActiveConcept(focusConcept && data.keyConcepts.includes(focusConcept) ? focusConcept : null);
     setExamSessionCount(sessions.length);
     setRescueAttempts(rescues);
     setIsLoadingExamSessions(false);
@@ -92,7 +104,7 @@ export function StudySetPage() {
       })
       .catch((requestError) => {
         if (!ignore) {
-          setError(requestError instanceof Error ? requestError.message : "Could not load study set.");
+          setError(toStudySetLoadError(requestError instanceof Error ? requestError.message : "Could not load study set."));
           setIsLoadingExamSessions(false);
           setPageNotice(null);
         }
@@ -101,7 +113,7 @@ export function StudySetPage() {
     return () => {
       ignore = true;
     };
-  }, [id, location.state]);
+  }, [focusConcept, id]);
 
   if (error) {
     return (
@@ -113,7 +125,7 @@ export function StudySetPage() {
               setStudySet(null);
               setIsLoadingExamSessions(true);
               void loadStudySetPage().catch((requestError) => {
-                setError(requestError instanceof Error ? requestError.message : "Could not load study set.");
+                setError(toStudySetLoadError(requestError instanceof Error ? requestError.message : "Could not load study set."));
                 setIsLoadingExamSessions(false);
                 setPageNotice(null);
               });
@@ -209,8 +221,17 @@ export function StudySetPage() {
           </div>
         ) : null}
         <div className="chip-row">
-          <Link className="primary-button" to={`/study-sets/${studySet.id}/exam`}>
-            Start Adaptive Oral Exam
+          <Link
+            className="primary-button"
+            to={`/study-sets/${studySet.id}/exam?rescue=on`}
+          >
+            Take Exam With Rescue Mode
+          </Link>
+          <Link
+            className="secondary-button"
+            to={`/study-sets/${studySet.id}/exam?rescue=off`}
+          >
+            Take Exam Without Rescue
           </Link>
           <span className="chip">{isLoadingExamSessions ? "Loading exam history..." : `${examSessionCount} saved exam sessions`}</span>
           <span className="chip">

@@ -39,12 +39,12 @@ export function HomePage() {
       copy: "Paste notes, add copied transcript text, or upload a PDF from class, documentation, or technical reading.",
     },
     {
-      title: "Generate structure instantly",
-      copy: "Study Sphere turns dense material into an organized guide with key concepts you can actually work through.",
+      title: "Generate and save your study pack",
+      copy: "Study Sphere turns dense material into a guide, flashcards, and a saved study set attached to your account.",
     },
     {
-      title: "Practice active recall",
-      copy: "Flip through flashcards and move into adaptive oral exam mode to test understanding instead of rereading.",
+      title: "Recover weak spots in real time",
+      copy: "Flip through flashcards, enter oral exam mode, and use Rescue Mode when an answer needs a quick reset.",
     },
   ];
 
@@ -62,14 +62,19 @@ export function HomePage() {
     {
       eyebrow: "Oral Exam Mode",
       title: "Practice explaining what you know",
-      copy: "Simulate a coach-style oral exam with adaptive follow-up questions that push you past surface-level memorization.",
+      copy: "Simulate a coach-style oral exam with adaptive follow-up questions, saved sessions, and recovery prompts when an answer falls short.",
+    },
+    {
+      eyebrow: "Rescue Mode",
+      title: "Turn weak answers into a fast correction loop",
+      copy: "When you miss a concept, the app pauses to explain what went wrong, gives you a quick reset, and lets you retry before moving on.",
     },
   ];
 
   const benefitPoints = [
-    "Built for technical notes, course handouts, documentation, and ML basics",
-    "Private per browser/device for personal revision workflows",
-    "Clear separation between learning content and practice modes",
+    "Accounts keep your saved sets, PDF jobs, exam sessions, and rescue progress together",
+    "Built for technical notes, course handouts, documentation, and dense reading",
+    "Study guides, flashcards, exams, and recovery loops reinforce each other in one flow",
   ];
 
   return (
@@ -85,8 +90,8 @@ export function HomePage() {
             <p className="eyebrow">Academic AI Workspace</p>
             <h1>Turn lecture notes, PDFs, and dense material into a study system you can actually use.</h1>
             <p className="landing-text landing-lead">
-              Study Sphere transforms raw material into structured guides, interactive flashcards, and adaptive oral
-              exam practice, so revision feels more focused and less overwhelming.
+              Study Sphere transforms raw material into structured guides, interactive flashcards, adaptive oral exam
+              practice, and Rescue Mode recovery loops, so revision feels more focused and less overwhelming.
             </p>
 
             <div className="landing-actions landing-actions-row">
@@ -99,9 +104,9 @@ export function HomePage() {
             </div>
 
             <div className="landing-points landing-points-inline">
-              <span>Study guides from notes and PDFs</span>
-              <span>Flashcards with flip-based recall</span>
-              <span>Adaptive oral exam practice</span>
+              <span>Saved study packs tied to your account</span>
+              <span>Flashcards and adaptive oral exams</span>
+              <span>Rescue Mode for weak answers</span>
             </div>
           </div>
 
@@ -130,18 +135,24 @@ export function HomePage() {
           <h2>Built for serious revision, not just content generation.</h2>
           <p>
             The app is designed to move you from information overload to retrieval practice. Instead of dumping raw AI
-            output, it helps you organize, revisit, and test what matters.
+            output, it helps you organize, revisit, test weak spots, and keep your progress attached to an account you can return to.
           </p>
         </div>
 
-        <div className="landing-feature-grid">
-          {productCards.map((card) => (
-            <article className="landing-feature-card reveal-on-scroll" data-reveal key={card.title}>
-              <p className="eyebrow">{card.eyebrow}</p>
-              <h3>{card.title}</h3>
-              <p>{card.copy}</p>
-            </article>
-          ))}
+        <div className="landing-feature-marquee reveal-on-scroll" data-reveal>
+          <div className="landing-feature-track">
+            {[...productCards, ...productCards].map((card, index) => (
+              <article
+                aria-hidden={index >= productCards.length}
+                className="landing-feature-card landing-feature-card-loop"
+                key={`${card.title}-${index}`}
+              >
+                <p className="eyebrow">{card.eyebrow}</p>
+                <h3>{card.title}</h3>
+                <p>{card.copy}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -152,7 +163,7 @@ export function HomePage() {
             <h2>One app, three study behaviors that reinforce each other.</h2>
             <p>
               Read for structure, revise by concept, and then force retrieval with flashcards and oral questioning.
-              That combination is what makes the workflow feel useful for academic and technical learning.
+              When you miss something, Rescue Mode turns the mistake into a guided recovery step instead of a dead end.
             </p>
           </div>
 
@@ -173,7 +184,7 @@ export function HomePage() {
             <p className="eyebrow">Ready To Start</p>
             <h2>Bring in your next document and turn it into a better revision flow.</h2>
             <p>
-              Paste content or upload a PDF, generate your study pack, and move straight into active recall.
+              Paste content or upload a PDF, generate your study pack, and move straight into saved revision, oral practice, and concept recovery.
             </p>
           </div>
           <div className="landing-actions landing-actions-row">

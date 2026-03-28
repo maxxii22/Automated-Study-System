@@ -6,6 +6,40 @@ import type { StudySetListItem } from "@automated-study-system/shared";
 import { StatePanel } from "../components/StatePanel";
 import { deleteStudySet, fetchStudySets } from "../lib/api";
 
+const SAVED_STUDY_SETS_CACHE_KEY = "study-sphere.saved-study-sets-cache";
+
+type SavedStudySetsCache = {
+  items: StudySetListItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+function readCachedStudySets(): SavedStudySetsCache | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(SAVED_STUDY_SETS_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as SavedStudySetsCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedStudySets(payload: SavedStudySetsCache) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(SAVED_STUDY_SETS_CACHE_KEY, JSON.stringify(payload));
+}
+
 export function SavedStudySetsPage() {
   const navigate = useNavigate();
   const [studySets, setStudySets] = useState<StudySetListItem[]>([]);
@@ -23,10 +57,23 @@ export function SavedStudySetsPage() {
     setNextCursor(response.page.nextCursor ?? null);
     setHasMore(response.page.hasMore);
     setError(null);
+    writeCachedStudySets({
+      items: response.items,
+      nextCursor: response.page.nextCursor ?? null,
+      hasMore: response.page.hasMore
+    });
   }
 
   useEffect(() => {
     let ignore = false;
+    const cached = readCachedStudySets();
+
+    if (cached) {
+      setStudySets(cached.items);
+      setNextCursor(cached.nextCursor);
+      setHasMore(cached.hasMore);
+      setIsLoading(false);
+    }
 
     loadStudySets()
       .then(() => {
@@ -94,7 +141,15 @@ export function SavedStudySetsPage() {
 
     try {
       await deleteStudySet(studySetPendingDelete.id);
-      setStudySets((current) => current.filter((studySet) => studySet.id !== studySetPendingDelete.id));
+      setStudySets((current) => {
+        const nextItems = current.filter((studySet) => studySet.id !== studySetPendingDelete.id);
+        writeCachedStudySets({
+          items: nextItems,
+          nextCursor,
+          hasMore
+        });
+        return nextItems;
+      });
       setStudySetPendingDelete(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not delete the study set.");
@@ -112,7 +167,15 @@ export function SavedStudySetsPage() {
 
     try {
       const response = await fetchStudySets(nextCursor);
-      setStudySets((current) => [...current, ...response.items]);
+      setStudySets((current) => {
+        const nextItems = [...current, ...response.items];
+        writeCachedStudySets({
+          items: nextItems,
+          nextCursor: response.page.nextCursor ?? null,
+          hasMore: response.page.hasMore
+        });
+        return nextItems;
+      });
       setNextCursor(response.page.nextCursor ?? null);
       setHasMore(response.page.hasMore);
     } catch (requestError) {

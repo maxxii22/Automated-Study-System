@@ -626,6 +626,24 @@ pre {
   gap: 22px;
 }
 
+.landing-feature-marquee {
+  width: min(1180px, calc(100vw - 48px));
+  margin: 0 auto;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0, black 4%, black 96%, transparent 100%);
+}
+
+.landing-feature-track {
+  display: flex;
+  gap: 22px;
+  width: max-content;
+  animation: landing-feature-loop 26s linear infinite;
+}
+
+.landing-feature-marquee:hover .landing-feature-track {
+  animation-play-state: paused;
+}
+
 .landing-feature-card,
 .landing-proof-panel,
 .landing-cta-panel {
@@ -639,6 +657,11 @@ pre {
 .landing-feature-card {
   padding: 28px;
   border-radius: 28px;
+}
+
+.landing-feature-card-loop {
+  flex: 0 0 min(360px, calc(100vw - 72px));
+  min-height: 206px;
 }
 
 .landing-proof-panel,
@@ -1226,6 +1249,10 @@ h1 {
   color: #eef4ff;
 }
 
+.pdf-summary-preview {
+  gap: 8px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1247,6 +1274,10 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(17, 20, 27, 0.98);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
+}
+
+.pdf-upload-modal {
+  width: min(560px, 100%);
 }
 
 .confirm-modal {
@@ -1305,6 +1336,74 @@ h1 {
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+.pdf-upload-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 230px;
+  padding: 28px;
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f8ff;
+  text-align: center;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.pdf-upload-dropzone:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 164, 93, 0.42);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pdf-upload-dropzone:active {
+  transform: scale(0.99);
+}
+
+.pdf-upload-dropzone strong {
+  font-size: 1.2rem;
+  color: #f5f8ff;
+}
+
+.pdf-upload-dropzone span {
+  max-width: 380px;
+  color: rgba(232, 238, 247, 0.78);
+  line-height: 1.6;
+}
+
+.pdf-upload-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  min-height: 92px;
+  padding: 14px;
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(255, 121, 59, 0.28), rgba(143, 71, 29, 0.38));
+  border: 1px solid rgba(245, 164, 93, 0.26);
+  color: #ffb067;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pdf-upload-status {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pdf-upload-status p {
+  margin: 0;
+  color: #eef4ff;
 }
 
 .confirm-actions {
@@ -1693,6 +1792,8 @@ h1 {
 .error-text {
   color: #bf4f4f;
   margin-top: 16px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .success-text {
@@ -2117,6 +2218,7 @@ h1 {
   display: grid;
   gap: 10px;
   margin-top: 16px;
+  max-width: 100%;
 }
 
 .inline-feedback-warning {
@@ -2149,6 +2251,10 @@ h1 {
     opacity: 1;
     transform: none;
     transition: none;
+    animation: none;
+  }
+
+  .landing-feature-track {
     animation: none;
   }
 }
@@ -2228,6 +2334,28 @@ h1 {
   .landing-points-inline {
     gap: 10px 12px;
     font-size: 0.88rem;
+  }
+
+  .landing-feature-marquee {
+    width: min(100%, calc(100vw - 32px));
+    overflow: visible;
+    mask-image: none;
+  }
+
+  .landing-feature-track {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    animation: none;
+  }
+
+  .landing-feature-card-loop {
+    flex: initial;
+    min-height: 0;
+  }
+
+  .landing-feature-card-loop[aria-hidden="true"] {
+    display: none;
   }
 
   .study-sphere-logo.compact .study-sphere-logo-stage {
@@ -2513,5 +2641,15 @@ h1 {
 
   100% {
     opacity: 1;
+  }
+}
+
+@keyframes landing-feature-loop {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(-50% - 11px));
   }
 }

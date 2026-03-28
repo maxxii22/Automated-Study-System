@@ -30,6 +30,10 @@ export function getCachedAccessToken() {
   return cachedSession?.access_token ?? null;
 }
 
+export function getCachedSession() {
+  return cachedSession;
+}
+
 export async function getAccessToken() {
   if (cachedSession) {
     return cachedSession.access_token;
