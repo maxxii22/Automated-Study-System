@@ -46,6 +46,108 @@ const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard })
   );
 });
 
+function MobileFlashcardTrainer({
+  cards
+}: {
+  cards: Flashcard[];
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [cardFeedback, setCardFeedback] = useState<Record<string, "unfamiliar" | "familiar">>({});
+
+  useEffect(() => {
+    setIsFlipped(false);
+  }, [activeIndex]);
+
+  if (cards.length === 0) {
+    return null;
+  }
+
+  const activeCard = cards[activeIndex];
+  const unfamiliarCount = Object.values(cardFeedback).filter((value) => value === "unfamiliar").length;
+  const familiarCount = Object.values(cardFeedback).filter((value) => value === "familiar").length;
+  const unseenCount = cards.length - Object.keys(cardFeedback).length;
+
+  function handleFeedback(nextFeedback: "unfamiliar" | "familiar") {
+    setCardFeedback((current) => ({
+      ...current,
+      [activeCard.id]: nextFeedback
+    }));
+
+    if (activeIndex < cards.length - 1) {
+      setActiveIndex((current) => current + 1);
+    }
+  }
+
+  return (
+    <section className="mobile-flashcard-trainer">
+      <div className="mobile-flashcard-header">
+        <span className="mobile-flashcard-mode">Flashcards</span>
+      </div>
+
+      <div className="mobile-flashcard-stats">
+        <span className="mobile-flashcard-pill is-unfamiliar">{unfamiliarCount} Unfamiliar</span>
+        <span className="mobile-flashcard-pill is-learning">{unseenCount} Unseen</span>
+        <span className="mobile-flashcard-pill is-familiar">{familiarCount} Familiar</span>
+      </div>
+
+      <button
+        aria-label={isFlipped ? "Hide flashcard answer" : "Reveal flashcard answer"}
+        aria-pressed={isFlipped}
+        className={isFlipped ? "mobile-flashcard-card is-flipped" : "mobile-flashcard-card"}
+        onClick={() => setIsFlipped((current) => !current)}
+        type="button"
+      >
+        <span className="mobile-flashcard-inner">
+          <span className="mobile-flashcard-face mobile-flashcard-front">
+            <span className="flashcard-label">Question</span>
+            <span className="mobile-flashcard-copy">{activeCard.question}</span>
+            <span className="mobile-flashcard-helper">Tap to reveal answer</span>
+          </span>
+          <span className="mobile-flashcard-face mobile-flashcard-back">
+            <span className="flashcard-label">Answer</span>
+            <span className="mobile-flashcard-copy">{activeCard.answer}</span>
+            <span className="mobile-flashcard-helper">Tap to flip back</span>
+          </span>
+        </span>
+      </button>
+
+      <div className="mobile-flashcard-actions">
+        <button className="mobile-flashcard-response is-negative" onClick={() => handleFeedback("unfamiliar")} type="button">
+          Didn&apos;t know it
+        </button>
+        <button className="mobile-flashcard-response is-positive" onClick={() => handleFeedback("familiar")} type="button">
+          I knew it
+        </button>
+      </div>
+
+      <div className="mobile-flashcard-footer">
+        <button
+          aria-label="Previous flashcard"
+          className="mobile-flashcard-nav"
+          disabled={activeIndex === 0}
+          onClick={() => setActiveIndex((current) => Math.max(0, current - 1))}
+          type="button"
+        >
+          &#8249;
+        </button>
+        <span className="mobile-flashcard-progress">
+          {activeIndex + 1} / {cards.length}
+        </span>
+        <button
+          aria-label="Next flashcard"
+          className="mobile-flashcard-nav"
+          disabled={activeIndex === cards.length - 1}
+          onClick={() => setActiveIndex((current) => Math.min(cards.length - 1, current + 1))}
+          type="button"
+        >
+          &#8250;
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function StudySetPage() {
   const { id = "" } = useParams();
   const location = useLocation();
@@ -299,7 +401,10 @@ export function StudySetPage() {
 
       <article className="panel">
         <h2>Flashcards</h2>
-        <div className="flashcard-list">
+        <div className="mobile-flashcard-section">
+          <MobileFlashcardTrainer cards={flashcards} />
+        </div>
+        <div className="flashcard-list desktop-flashcard-list">
           {flashcards.map((card) => (
             <FlashcardItem card={card} key={card.id} />
           ))}
