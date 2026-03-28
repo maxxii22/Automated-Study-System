@@ -40,6 +40,36 @@ function writeCachedStudySets(payload: SavedStudySetsCache) {
   window.sessionStorage.setItem(SAVED_STUDY_SETS_CACHE_KEY, JSON.stringify(payload));
 }
 
+function formatRelativeUpdateTime(value: string) {
+  const updatedAt = new Date(value);
+  const deltaMs = Date.now() - updatedAt.getTime();
+
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) {
+    return "Updated recently";
+  }
+
+  const minutes = Math.floor(deltaMs / (60 * 1000));
+  if (minutes < 1) {
+    return "Updated just now";
+  }
+
+  if (minutes < 60) {
+    return `Updated ${minutes}m ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `Updated ${hours}h ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `Updated ${days}d ago`;
+  }
+
+  return `Updated ${updatedAt.toLocaleDateString()}`;
+}
+
 export function SavedStudySetsPage() {
   const navigate = useNavigate();
   const [studySets, setStudySets] = useState<StudySetListItem[]>([]);
@@ -221,11 +251,11 @@ export function SavedStudySetsPage() {
             <article
               className="recent-item"
               key={studySet.id}
-              onClick={() => navigate(`/study-sets/${studySet.id}`)}
+              onClick={() => navigate(`/study-sets/${studySet.id}`, { state: { studySetPreview: studySet } })}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  navigate(`/study-sets/${studySet.id}`);
+                  navigate(`/study-sets/${studySet.id}`, { state: { studySetPreview: studySet } });
                 }
               }}
               role="link"
@@ -233,21 +263,24 @@ export function SavedStudySetsPage() {
             >
               <div className="recent-item-content">
                 <strong className="recent-item-title">{studySet.title}</strong>
-                <p className="muted">
-                  {studySet.sourceType === "pdf"
-                    ? `PDF${studySet.sourceFileName ? ` • ${studySet.sourceFileName}` : ""}`
-                    : "Text notes"}
+                <p className="recent-item-source">
+                  {studySet.sourceType === "pdf" ? "PDF" : "Paste"}
                 </p>
-                <p className="muted">{studySet.flashcardCount} flashcards</p>
-                <p className="muted">{studySet.summary}</p>
+                <p className="recent-item-meta">
+                  {studySet.flashcardCount} flashcards • {formatRelativeUpdateTime(studySet.updatedAt)}
+                </p>
+                <p className="recent-item-preview">
+                  {studySet.summary ? studySet.summary : "Summary available"}
+                </p>
               </div>
               <div className="recent-item-actions">
                 <Link
-                  className="recent-item-action"
+                  className="recent-item-action recent-item-open"
                   onClick={(event) => event.stopPropagation()}
+                  state={{ studySetPreview: studySet }}
                   to={`/study-sets/${studySet.id}`}
                 >
-                  Open Set
+                  Open
                 </Link>
                 <button className="danger-button" onClick={(event) => promptDelete(event, studySet)} type="button">
                   Delete Set

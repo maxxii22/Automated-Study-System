@@ -16,6 +16,7 @@ import {
   submitRescueRetry,
   transcribeExamAnswer
 } from "../lib/api";
+import { readCachedStudySet, writeCachedStudySet } from "../lib/studySetCache";
 
 function getExamRescueModeStorageKey(studySetId: string) {
   return `study-sphere.exam-rescue-mode:${studySetId}`;
@@ -105,6 +106,7 @@ export function ExamPage() {
 
   async function loadExamPage() {
     const [loadedStudySet, sessions] = await Promise.all([fetchStudySet(id), fetchExamSessions(id)]);
+    writeCachedStudySet(loadedStudySet);
     setStudySet(loadedStudySet);
     const existingSession = sessions.find((item) => !item.completed) ?? null;
     const nextSession = existingSession ?? (await saveExamSession(loadedStudySet.id, createExamSession(loadedStudySet)));
@@ -155,9 +157,8 @@ export function ExamPage() {
 
     try {
       const savedSession = await saveExamSession(studySet.id, restarted);
-      const sessions = await fetchExamSessions(studySet.id);
       setSession(savedSession);
-      setHistory(sessions);
+      setHistory((current) => [savedSession, ...current.filter((item) => item.id !== savedSession.id)]);
     } catch (restartError) {
       setError(restartError instanceof Error ? restartError.message : "Could not restart the oral exam.");
     } finally {
@@ -167,6 +168,12 @@ export function ExamPage() {
 
   useEffect(() => {
     let ignore = false;
+    const cachedStudySet = readCachedStudySet(id);
+
+    if (cachedStudySet) {
+      setStudySet(cachedStudySet);
+      setError(null);
+    }
 
     loadExamPage()
       .then(() => {
@@ -269,9 +276,8 @@ export function ExamPage() {
       );
 
       const savedSession = await saveExamSession(studySet.id, updatedSession);
-      const sessions = await fetchExamSessions(studySet.id);
       setSession(savedSession);
-      setHistory(sessions);
+      setHistory((current) => [savedSession, ...current.filter((item) => item.id !== savedSession.id)]);
       setAnswer("");
       setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
 

@@ -587,7 +587,8 @@ async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnRequest): Pro
       }
     },
     action: "Gemini exam evaluation request",
-    priority: "high"
+    priority: "high",
+    timeoutMs: env.GEMINI_EXAM_TIMEOUT_MS
   });
   const outputText = extractTextResponse(data);
   const parsed = parseStructuredResponse(outputText, examTurnResponseSchema);

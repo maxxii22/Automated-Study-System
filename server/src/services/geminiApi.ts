@@ -39,6 +39,18 @@ export class GeminiApiError extends Error {
   }
 }
 
+export class GeminiApiTimeoutError extends Error {
+  readonly action: string;
+  readonly timeoutMs: number;
+
+  constructor(action: string, timeoutMs: number) {
+    super(`${action} timed out after ${timeoutMs}ms.`);
+    this.name = "GeminiApiTimeoutError";
+    this.action = action;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 function parseRetryAfterHeader(value: string | null) {
   if (!value) {
     return undefined;
@@ -148,11 +160,16 @@ export function isGeminiRateLimitError(error: unknown): error is GeminiApiError 
   return error instanceof GeminiApiError && error.status === 429;
 }
 
+export function isGeminiTimeoutError(error: unknown): error is GeminiApiTimeoutError {
+  return error instanceof GeminiApiTimeoutError;
+}
+
 export async function fetchGeminiJson<T>(input: {
   url: string;
   body: unknown;
   action: string;
   priority?: GeminiRequestPriority;
+  timeoutMs?: number;
 }) {
   const startedAt = Date.now();
   const priority = input.priority ?? "normal";
@@ -162,13 +179,42 @@ export async function fetchGeminiJson<T>(input: {
   return withGeminiConcurrencyLimit(async () => {
     await incrementMetric("gemini_requests_total");
 
-    const response = await fetch(input.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(input.body)
-    });
+    const controller = typeof AbortController !== "undefined" && input.timeoutMs ? new AbortController() : undefined;
+    const timeoutHandle =
+      controller && input.timeoutMs
+        ? setTimeout(() => {
+            controller.abort();
+          }, input.timeoutMs)
+        : undefined;
+
+    let response: Response;
+
+    try {
+      response = await fetch(input.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(input.body),
+        signal: controller?.signal
+      });
+    } catch (error) {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+
+      if (controller?.signal.aborted) {
+        await observeDurationMetric("gemini_request_duration_ms", Date.now() - startedAt);
+        await incrementMetric("gemini_failures_total");
+        throw new GeminiApiTimeoutError(input.action, input.timeoutMs ?? 0);
+      }
+
+      throw error;
+    }
+
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
 
     if (!response.ok) {
       const responseText = await response.text();

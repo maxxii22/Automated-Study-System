@@ -158,6 +158,24 @@ function buildPreviewStudySet(studySet: GenerateStudySetResponse | null) {
   };
 }
 
+const OUTPUT_PREVIEW_SECTIONS = [
+  {
+    title: "Summary",
+    headline: "Short, structured notes from your content",
+    copy: "A quick overview that pulls the main ideas into a clean, easy-to-review starting point."
+  },
+  {
+    title: "Flashcards",
+    headline: "Key concepts turned into active recall cards",
+    copy: "Important ideas become question-and-answer cards you can use to test yourself fast."
+  },
+  {
+    title: "Practice",
+    headline: "Quick questions based on your notes",
+    copy: "Your study set can feed straight into oral exam practice and weak-topic review."
+  }
+] as const;
+
 export function CreateStudySetPage() {
   const navigate = useNavigate();
   const pasteTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -581,18 +599,36 @@ export function CreateStudySetPage() {
   const canRetryGeneration =
     !isSubmitting &&
     ((sourceType === "text" && lastTextPayloadRef.current !== null) || (sourceType === "pdf" && sourceFile !== null && lastPdfTitleRef.current));
+  const hasSourceUrl = sourceUrl.trim().length > 0;
+  const hasSourceText = sourceText.trim().length > 0;
+  const isGeneratingPreview = isSubmitting || Boolean(activeJob && !isStudyJobTerminal(activeJob));
+  const previewJobSourceType = activeJob?.sourceType ?? sourceType;
+  const currentStep = resultPreview ? 4 : isGeneratingPreview ? 3 : hasSourceText || hasSourceUrl || sourceFile ? 3 : 2;
 
   return (
     <section className="page-grid">
       <form className="panel form-panel" onSubmit={handleSubmit}>
+        <div className="create-steps-row" aria-label="Create study set steps">
+          {[1, 2, 3, 4].map((step) => (
+            <span className={step <= currentStep ? "create-step-chip is-active" : "create-step-chip"} key={step}>
+              Step {step}
+            </span>
+          ))}
+        </div>
+
         <div className="field">
-          <label>Choose your input</label>
+          <div className="field-heading">
+            <span className="field-step">Step 1</span>
+            <label>Choose your input</label>
+            <p className="field-helper">Start from pasted notes or upload a PDF and the app will shape the rest around it.</p>
+          </div>
           <div className="source-option-grid">
             <button
               className={sourceType === "text" ? "source-option-card active" : "source-option-card"}
               type="button"
               onClick={() => setSourceType("text")}
             >
+              {sourceType === "text" ? <span className="source-option-check" aria-hidden="true">✓</span> : null}
               <span className="source-option-icon">Paste</span>
               <span className="source-option-title">Paste</span>
               <span className="source-option-description">YouTube transcript, website text, class notes</span>
@@ -605,6 +641,7 @@ export function CreateStudySetPage() {
                 setIsPdfModalOpen(true);
               }}
             >
+              {sourceType === "pdf" ? <span className="source-option-check" aria-hidden="true">✓</span> : null}
               <span className="source-option-icon">PDF</span>
               <span className="source-option-title">Upload PDF</span>
               <span className="source-option-description">Lecture slides, handouts, textbook sections</span>
@@ -613,7 +650,11 @@ export function CreateStudySetPage() {
         </div>
 
         <div className="field">
-          <label htmlFor="title">{sourceType === "pdf" ? "PDF Title" : "Study Set Title"}</label>
+          <div className="field-heading">
+            <span className="field-step">Step 2</span>
+            <label htmlFor="title">{sourceType === "pdf" ? "PDF Title" : "Study Set Title"}</label>
+            <p className="field-helper">Use a clear title so the study set is easy to find later in your library.</p>
+          </div>
           <input
             id="title"
             value={title}
@@ -624,44 +665,67 @@ export function CreateStudySetPage() {
 
         {sourceType === "text" ? (
           <div className="field">
-            <label>Add content</label>
+            <div className="field-heading">
+              <span className="field-step">Step 2</span>
+              <label htmlFor="sourceTextInline">Add content</label>
+              <p className="field-helper">Paste the actual notes, transcript, or article text you want turned into a study pack.</p>
+            </div>
+            <div className="field">
+              <label htmlFor="sourceUrl">Optional source link</label>
+              <input
+                id="sourceUrl"
+                placeholder="https://youtube.com/watch?v=... or website URL"
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+              />
+            </div>
+            <div className="source-chip-list">
+              {hasSourceUrl ? <span className="source-chip">Link attached</span> : null}
+              {hasSourceText ? <span className="source-chip">{sourceText.length} characters ready</span> : null}
+              {!hasSourceUrl && !hasSourceText ? <span className="source-chip is-muted">No source added yet</span> : null}
+            </div>
+            <div className="field">
+              <label htmlFor="sourceTextInline">Pasted notes or transcript</label>
+              <textarea
+                className="create-inline-textarea"
+                id="sourceTextInline"
+                rows={10}
+                value={sourceText}
+                placeholder={starterText}
+                onChange={(event) => setSourceText(event.target.value)}
+              />
+              <div className="content-live-meta">
+                <p className="muted small-copy">
+                  {hasSourceText
+                    ? "Text ready for generation."
+                    : "Paste lecture notes, a transcript, or article text to generate a summary, flashcards, and practice."}
+                </p>
+                <p className="content-counter">{sourceText.length}/50000</p>
+              </div>
+            </div>
             <div className="inline-action-row">
-              <button
-                className="content-trigger"
-                type="button"
-                onClick={() => setIsPasteModalOpen(true)}
-                ref={pasteTriggerRef}
-              >
-                {sourceUrl || sourceText ? "Edit pasted content" : "Paste link or text"}
-              </button>
               <button className="secondary-button compact-button" type="button" onClick={loadStarterExample}>
                 Use Example
               </button>
-              {(sourceUrl || sourceText) ? (
+              {(hasSourceUrl || hasSourceText) ? (
                 <button className="secondary-button compact-button" type="button" onClick={resetTextInputs}>
                   Clear
                 </button>
               ) : null}
             </div>
-            <div className="content-preview">
-              <p className="muted small-copy">
-                {sourceUrl ? `Link added: ${sourceUrl}` : "No link added yet."}
+            {hasSourceUrl && !hasSourceText ? (
+              <p className="error-text content-warning">
+                A link alone is only stored as a reference. Paste the actual transcript or page text before generating.
               </p>
-              <p className="muted small-copy">
-                {sourceText
-                  ? `${Math.min(sourceText.length, 240)} characters of pasted text ready for generation.`
-                  : "No pasted text yet. Add website text, a YouTube transcript, or your notes."}
-              </p>
-              {sourceUrl && !sourceText ? (
-                <p className="error-text content-warning">
-                  A link alone is only stored as a reference. Paste the actual transcript or page text before generating.
-                </p>
-              ) : null}
-            </div>
+            ) : null}
           </div>
         ) : (
           <div className="field">
-            <label htmlFor="sourceFile">PDF Document</label>
+            <div className="field-heading">
+              <span className="field-step">Step 2</span>
+              <label htmlFor="sourceFile">PDF Document</label>
+              <p className="field-helper">Open the uploader, choose your PDF, then generate a study pack from the extracted content.</p>
+            </div>
             <input
               className="pdf-file-input"
               id="sourceFile"
@@ -699,9 +763,16 @@ export function CreateStudySetPage() {
           </div>
         )}
 
-        <button className="primary-button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? (sourceType === "pdf" ? "Uploading..." : "Generating...") : "Generate Study Pack"}
-        </button>
+        <div className="field">
+          <div className="field-heading">
+            <span className="field-step">Step 3</span>
+            <label>Generate</label>
+            <p className="field-helper">Build the study pack and then review the generated summary, flashcards, and practice output.</p>
+          </div>
+          <button className="primary-button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? (sourceType === "pdf" ? "Uploading..." : "Generating...") : "Generate Study Pack"}
+          </button>
+        </div>
 
         {activeJob && !isStudyJobTerminal(activeJob) ? (
           <div className="job-status-card">
@@ -740,6 +811,11 @@ export function CreateStudySetPage() {
       </form>
 
       <article className="panel result-panel">
+          <div className="field-heading result-panel-heading">
+            <span className="field-step">Step 4</span>
+            <label>Review output</label>
+            <p className="field-helper">Your study materials appear here as soon as generation starts and fill in as the job finishes.</p>
+          </div>
           <h2>Generated Output</h2>
           {isRestoringJob ? (
             <div className="job-preview">
@@ -749,24 +825,50 @@ export function CreateStudySetPage() {
               <div className="job-preview-progress" aria-hidden="true">
                 <span className="job-preview-progress-bar" />
               </div>
+              <div className="result-skeleton-grid">
+                {OUTPUT_PREVIEW_SECTIONS.map((section) => (
+                  <section className="result-skeleton-card" key={section.title}>
+                    <p className="flashcard-label">{section.title}</p>
+                    <div className="skeleton-line loading-card-title-line" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line loading-subtle-line" />
+                  </section>
+                ))}
+              </div>
             </div>
-          ) : activeJob && !isStudyJobTerminal(activeJob) ? (
+          ) : isGeneratingPreview ? (
             <div className="job-preview">
-              <div className="job-preview-badge">{activeJob.sourceType === "pdf" ? "Processing PDF" : "Generating Preview"}</div>
+              <div className="job-preview-badge">{previewJobSourceType === "pdf" ? "Processing PDF" : "Generating Preview"}</div>
               <h3>Your study set is being prepared.</h3>
               <p className="job-preview-copy">
-                {activeJob.sourceType === "pdf"
+                {previewJobSourceType === "pdf"
                   ? "You can stay here or leave this page. We&apos;ll reconnect to the job and open the study set as soon as it&apos;s ready."
                   : "You can stay here or leave this page. We&apos;ll reconnect to the job and bring the generated preview back when it finishes."}
               </p>
               <div className="job-preview-progress" aria-hidden="true">
                 <span className="job-preview-progress-bar" />
               </div>
+              <div className="result-skeleton-grid">
+                {OUTPUT_PREVIEW_SECTIONS.map((section) => (
+                  <section className="result-skeleton-card" key={section.title}>
+                    <p className="flashcard-label">{section.title}</p>
+                    <div className="skeleton-line loading-card-title-line" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line loading-subtle-line" />
+                  </section>
+                ))}
+              </div>
             </div>
           ) : !resultPreview ? (
-            <p className="muted">
-              Your generated summary, guide, and flashcards will appear here after you generate a study pack.
-            </p>
+            <div className="result-placeholder-stack">
+              {OUTPUT_PREVIEW_SECTIONS.map((section) => (
+                <section className="result-placeholder-card" key={section.title}>
+                  <p className="flashcard-label">{section.title}</p>
+                  <h3>{section.headline}</h3>
+                  <p className="result-placeholder-copy">{section.copy}</p>
+                </section>
+              ))}
+            </div>
         ) : (
           <>
             <section className="result-block">

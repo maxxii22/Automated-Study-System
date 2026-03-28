@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { evaluateExamTurn } from "../services/geminiService.js";
-import { isGeminiRateLimitError } from "../services/geminiApi.js";
+import { isGeminiRateLimitError, isGeminiTimeoutError } from "../services/geminiApi.js";
 import { evaluateExamTurnLocally } from "../services/examFallbackService.js";
 
 const examQuestionSchema = z.object({
@@ -68,10 +68,10 @@ export async function evaluateExamTurnController(request: Request, response: Res
     const examResponse = await evaluateExamTurn(parsed.data);
     return response.status(200).json(examResponse);
   } catch (error) {
-    if (isGeminiRateLimitError(error)) {
+    if (isGeminiRateLimitError(error) || isGeminiTimeoutError(error)) {
       const fallbackResponse = evaluateExamTurnLocally(parsed.data);
       response.setHeader("X-Exam-Evaluation-Mode", "fallback");
-      response.setHeader("X-Exam-Evaluation-Reason", "gemini_rate_limit");
+      response.setHeader("X-Exam-Evaluation-Reason", isGeminiTimeoutError(error) ? "gemini_timeout" : "gemini_rate_limit");
       return response.status(200).json(fallbackResponse);
     }
 

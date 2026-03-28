@@ -1,11 +1,12 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
-import type { Flashcard, RescueAttempt, StudySet } from "@automated-study-system/shared";
+import type { Flashcard, RescueAttempt, StudySet, StudySetListItem } from "@automated-study-system/shared";
 
 import { StatePanel } from "../components/StatePanel";
 import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
 import { fetchExamSessions, fetchRescueAttempts, fetchStudySet, fetchStudySetFlashcards, mergeFlashcards } from "../lib/api";
+import { readCachedStudySet, writeCachedStudySet } from "../lib/studySetCache";
 
 function toStudySetLoadError(message: string | null | undefined) {
   if (!message) {
@@ -17,6 +18,56 @@ function toStudySetLoadError(message: string | null | undefined) {
   }
 
   return message;
+}
+
+const SAVED_STUDY_SETS_CACHE_KEY = "study-sphere.saved-study-sets-cache";
+
+type StudySetPageLocationState = {
+  focusConcept?: string;
+  studySetPreview?: StudySetListItem;
+};
+
+function getFlashcardProgressStorageKey(studySetId: string) {
+  return `study-set-flashcards:${studySetId}`;
+}
+
+function createPreviewStudySet(studySetPreview: StudySetListItem): StudySet {
+  return {
+    id: studySetPreview.id,
+    title: studySetPreview.title,
+    sourceText: "",
+    sourceType: studySetPreview.sourceType,
+    sourceFileName: studySetPreview.sourceFileName,
+    summary: studySetPreview.summary,
+    studyGuide: "",
+    keyConcepts: studySetPreview.keyConcepts,
+    flashcards: [],
+    flashcardCount: studySetPreview.flashcardCount,
+    createdAt: studySetPreview.createdAt,
+    updatedAt: studySetPreview.updatedAt
+  };
+}
+
+function readCachedStudySetPreview(studySetId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(SAVED_STUDY_SETS_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsedValue = JSON.parse(raw) as {
+      items?: StudySetListItem[];
+    };
+
+    return parsedValue.items?.find((item) => item.id === studySetId) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard }) {
@@ -47,17 +98,56 @@ const FlashcardItem = memo(function FlashcardItem({ card }: { card: Flashcard })
 });
 
 function MobileFlashcardTrainer({
+  studySetId,
   cards
 }: {
+  studySetId: string;
   cards: Flashcard[];
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [cardFeedback, setCardFeedback] = useState<Record<string, "unfamiliar" | "familiar">>({});
+  const [streak, setStreak] = useState(0);
+  const [lastOutcome, setLastOutcome] = useState<"unfamiliar" | "familiar" | null>(null);
 
   useEffect(() => {
     setIsFlipped(false);
   }, [activeIndex]);
+
+  useEffect(() => {
+    try {
+      const savedValue = window.sessionStorage.getItem(getFlashcardProgressStorageKey(studySetId));
+
+      if (!savedValue) {
+        return;
+      }
+
+      const parsedValue = JSON.parse(savedValue) as {
+        activeIndex?: number;
+        cardFeedback?: Record<string, "unfamiliar" | "familiar">;
+        streak?: number;
+      };
+
+      setActiveIndex(typeof parsedValue.activeIndex === "number" ? Math.min(cards.length - 1, Math.max(0, parsedValue.activeIndex)) : 0);
+      setCardFeedback(parsedValue.cardFeedback ?? {});
+      setStreak(typeof parsedValue.streak === "number" ? parsedValue.streak : 0);
+    } catch {
+      setActiveIndex(0);
+      setCardFeedback({});
+      setStreak(0);
+    }
+  }, [cards.length, studySetId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      getFlashcardProgressStorageKey(studySetId),
+      JSON.stringify({
+        activeIndex,
+        cardFeedback,
+        streak
+      })
+    );
+  }, [activeIndex, cardFeedback, streak, studySetId]);
 
   if (cards.length === 0) {
     return null;
@@ -73,6 +163,8 @@ function MobileFlashcardTrainer({
       ...current,
       [activeCard.id]: nextFeedback
     }));
+    setLastOutcome(nextFeedback);
+    setStreak((current) => (nextFeedback === "familiar" ? current + 1 : 0));
 
     if (activeIndex < cards.length - 1) {
       setActiveIndex((current) => current + 1);
@@ -81,10 +173,10 @@ function MobileFlashcardTrainer({
 
   return (
     <section className="mobile-flashcard-trainer">
-      <div className="mobile-flashcard-header">
-        <span className="mobile-flashcard-mode">Flashcards</span>
+      <div className="mobile-flashcard-topline">
+        <span className="mobile-flashcard-resume">Continue where you left off</span>
+        <span className="mobile-flashcard-streak">Streak {streak}</span>
       </div>
-
       <div className="mobile-flashcard-stats">
         <span className="mobile-flashcard-pill is-unfamiliar">{unfamiliarCount} Unfamiliar</span>
         <span className="mobile-flashcard-pill is-learning">{unseenCount} Unseen</span>
@@ -111,6 +203,13 @@ function MobileFlashcardTrainer({
           </span>
         </span>
       </button>
+
+      {lastOutcome ? (
+        <div className={lastOutcome === "familiar" ? "mobile-flashcard-feedback is-positive" : "mobile-flashcard-feedback is-negative"}>
+          <strong>{lastOutcome === "familiar" ? "Locked in" : "Needs another pass"}</strong>
+          <span>{lastOutcome === "familiar" ? "Keep the streak going with the next card." : "This card is now marked for review."}</span>
+        </div>
+      ) : null}
 
       <div className="mobile-flashcard-actions">
         <button className="mobile-flashcard-response is-negative" onClick={() => handleFeedback("unfamiliar")} type="button">
@@ -151,11 +250,19 @@ function MobileFlashcardTrainer({
 export function StudySetPage() {
   const { id = "" } = useParams();
   const location = useLocation();
+  const locationState = (location.state as StudySetPageLocationState | null) ?? null;
+  const conceptsSectionRef = useRef<HTMLElement | null>(null);
+  const guideSectionRef = useRef<HTMLElement | null>(null);
+  const flashcardsSectionRef = useRef<HTMLElement | null>(null);
   const focusConcept = useMemo(() => {
-    return typeof (location.state as { focusConcept?: string } | null)?.focusConcept === "string"
-      ? (location.state as { focusConcept?: string }).focusConcept ?? null
+    return typeof locationState?.focusConcept === "string"
+      ? locationState.focusConcept ?? null
       : null;
-  }, [location.state]);
+  }, [locationState]);
+  const previewStudySet = useMemo(() => {
+    const nextPreview = locationState?.studySetPreview ?? readCachedStudySetPreview(id);
+    return nextPreview ? createPreviewStudySet(nextPreview) : null;
+  }, [id, locationState]);
   const [studySet, setStudySet] = useState<StudySet | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardCursor, setFlashcardCursor] = useState<string | null>(null);
@@ -169,8 +276,17 @@ export function StudySetPage() {
   const [pageNotice, setPageNotice] = useState<string | null>(null);
 
   async function loadStudySetPage() {
-    const data = await fetchStudySet(id);
-    const [sessionsResult, rescuesResult] = await Promise.allSettled([fetchExamSessions(id), fetchRescueAttempts(id)]);
+    const [studySetResult, sessionsResult, rescuesResult] = await Promise.allSettled([
+      fetchStudySet(id),
+      fetchExamSessions(id),
+      fetchRescueAttempts(id)
+    ]);
+
+    if (studySetResult.status !== "fulfilled") {
+      throw studySetResult.reason;
+    }
+
+    const data = studySetResult.value;
     const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : [];
     const rescues = rescuesResult.status === "fulfilled" ? rescuesResult.value : [];
     const noticeParts: string[] = [];
@@ -183,6 +299,7 @@ export function StudySetPage() {
       noticeParts.push("Rescue history is temporarily unavailable.");
     }
 
+    writeCachedStudySet(data);
     setStudySet(data);
     setFlashcards(data.flashcards);
     setFlashcardCursor(data.flashcardCount > data.flashcards.length ? data.flashcards.at(-1)?.id ?? null : null);
@@ -197,6 +314,24 @@ export function StudySetPage() {
 
   useEffect(() => {
     let ignore = false;
+    const cachedStudySet = readCachedStudySet(id);
+
+    if (cachedStudySet) {
+      setStudySet(cachedStudySet);
+      setFlashcards(cachedStudySet.flashcards);
+      setFlashcardCursor(cachedStudySet.flashcardCount > cachedStudySet.flashcards.length ? cachedStudySet.flashcards.at(-1)?.id ?? null : null);
+      setHasMoreFlashcards(cachedStudySet.flashcardCount > cachedStudySet.flashcards.length);
+      setActiveConcept(focusConcept && cachedStudySet.keyConcepts.includes(focusConcept) ? focusConcept : null);
+      setError(null);
+    } else if (previewStudySet) {
+      setStudySet(previewStudySet);
+      setFlashcards([]);
+      setFlashcardCursor(null);
+      setHasMoreFlashcards(false);
+      setActiveConcept(focusConcept && previewStudySet.keyConcepts.includes(focusConcept) ? focusConcept : null);
+      setError(null);
+      setPageNotice("Loading full study-set details. You can still review the summary and concepts while the rest catches up.");
+    }
 
     loadStudySetPage()
       .then(() => {
@@ -206,6 +341,13 @@ export function StudySetPage() {
       })
       .catch((requestError) => {
         if (!ignore) {
+          if (cachedStudySet || previewStudySet) {
+            setIsLoadingExamSessions(false);
+            setPageNotice("Live study-set details are temporarily unavailable. Showing the latest available preview instead.");
+            setError(null);
+            return;
+          }
+
           setError(toStudySetLoadError(requestError instanceof Error ? requestError.message : "Could not load study set."));
           setIsLoadingExamSessions(false);
           setPageNotice(null);
@@ -217,7 +359,7 @@ export function StudySetPage() {
     };
   }, [focusConcept, id]);
 
-  if (error) {
+  if (error && !studySet) {
     return (
       <StatePanel
         actions={
@@ -307,6 +449,23 @@ export function StudySetPage() {
 
   const recoveredRescues = rescueAttempts.filter((attempt) => attempt.status === "recovered");
   const activeRescues = rescueAttempts.filter((attempt) => attempt.status !== "recovered");
+  const coreConcepts = studySet.keyConcepts.slice(0, 3);
+  const supportingConcepts = studySet.keyConcepts.slice(3);
+  const isPreviewOnly = !studySet.studyGuide && studySet.flashcards.length === 0 && !studySet.sourceText;
+
+  function scrollToSection(section: "concepts" | "guide" | "flashcards") {
+    const target =
+      section === "concepts"
+        ? conceptsSectionRef.current
+        : section === "guide"
+          ? guideSectionRef.current
+          : flashcardsSectionRef.current;
+
+    target?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  }
 
   return (
     <section className="page-grid study-page">
@@ -316,30 +475,58 @@ export function StudySetPage() {
         <p className="muted">
           Source: {studySet.sourceType === "pdf" ? `PDF${studySet.sourceFileName ? ` • ${studySet.sourceFileName}` : ""}` : "Text notes"}
         </p>
-        <p>{studySet.summary}</p>
+        <p className="study-page-summary">{studySet.summary}</p>
         {pageNotice ? (
           <div className="inline-feedback-block inline-feedback-warning">
             <p className="muted">{pageNotice}</p>
           </div>
         ) : null}
-        <div className="chip-row">
+        <div className="study-page-actions">
           <Link
-            className="primary-button"
+            aria-disabled={isPreviewOnly}
+            className={isPreviewOnly ? "primary-button disabled-link-button" : "primary-button"}
+            onClick={(event) => {
+              if (isPreviewOnly) {
+                event.preventDefault();
+              }
+            }}
             to={`/study-sets/${studySet.id}/exam?rescue=on`}
           >
             Take Exam With Rescue Mode
           </Link>
           <Link
-            className="secondary-button"
+            aria-disabled={isPreviewOnly}
+            className={isPreviewOnly ? "secondary-button disabled-link-button" : "secondary-button"}
+            onClick={(event) => {
+              if (isPreviewOnly) {
+                event.preventDefault();
+              }
+            }}
             to={`/study-sets/${studySet.id}/exam?rescue=off`}
           >
             Take Exam Without Rescue
           </Link>
-          <span className="chip">{isLoadingExamSessions ? "Loading exam history..." : `${examSessionCount} saved exam sessions`}</span>
+          <Link className="secondary-button" to="/saved">
+            Back to Library
+          </Link>
+        </div>
+        <div className="chip-row">
+          <span className="chip">{isPreviewOnly ? "Waiting for full study set..." : isLoadingExamSessions ? "Loading exam history..." : `${examSessionCount} saved exam sessions`}</span>
           <span className="chip">
             {activeRescues.length > 0 ? `${activeRescues.length} active rescue step${activeRescues.length === 1 ? "" : "s"}` : `${recoveredRescues.length} rescued concept${recoveredRescues.length === 1 ? "" : "s"}`}
           </span>
         </div>
+        <nav className="study-section-nav" aria-label="Study set sections">
+          <button className="study-section-nav-item" onClick={() => scrollToSection("concepts")} type="button">
+            Concepts
+          </button>
+          <button className="study-section-nav-item" onClick={() => scrollToSection("guide")} type="button">
+            Guide
+          </button>
+          <button className="study-section-nav-item" onClick={() => scrollToSection("flashcards")} type="button">
+            Flashcards
+          </button>
+        </nav>
 
         {rescueAttempts.length > 0 ? (
           <section className="result-block">
@@ -377,43 +564,88 @@ export function StudySetPage() {
           </section>
         ) : null}
 
-        <section className="result-block">
+        <section className="result-block study-section-card" ref={conceptsSectionRef}>
           <h3>Key Concepts</h3>
-          <div className="chip-row">
-            {studySet.keyConcepts.map((concept) => (
-              <button
-                className={activeConcept === concept ? "chip concept-chip active" : "chip concept-chip"}
-                key={concept}
-                onClick={() => setActiveConcept((current) => (current === concept ? null : concept))}
-                type="button"
-              >
-                {concept}
-              </button>
-            ))}
+          <div className="concept-group-stack">
+            <div className="concept-group-card">
+              <div className="concept-group-header">
+                <span className="concept-group-kicker">Core Concepts</span>
+                <p className="muted small-copy">Start here for the highest-yield ideas.</p>
+              </div>
+              <div className="chip-row">
+                {coreConcepts.map((concept) => (
+                  <button
+                    className={activeConcept === concept ? "chip concept-chip active" : "chip concept-chip"}
+                    key={concept}
+                    onClick={() => setActiveConcept((current) => (current === concept ? null : concept))}
+                    type="button"
+                  >
+                    {concept}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {supportingConcepts.length > 0 ? (
+              <div className="concept-group-card concept-group-card-soft">
+                <div className="concept-group-header">
+                  <span className="concept-group-kicker">Supporting Concepts</span>
+                  <p className="muted small-copy">Use these to tighten the edges after the core ideas click.</p>
+                </div>
+                <div className="chip-row">
+                  {supportingConcepts.map((concept) => (
+                    <button
+                      className={activeConcept === concept ? "chip concept-chip active" : "chip concept-chip"}
+                      key={concept}
+                      onClick={() => setActiveConcept((current) => (current === concept ? null : concept))}
+                      type="button"
+                    >
+                      {concept}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           {activeConcept ? <p className="muted small-copy">Filtering study guide by: {activeConcept}</p> : null}
         </section>
-        <section className="result-block">
+        <section className="result-block study-section-card" ref={guideSectionRef}>
           <h3>Study Guide</h3>
-          <StudyGuideRenderer activeConcept={activeConcept} content={studySet.studyGuide} />
+          <p className="muted small-copy">Open only the sections you want to focus on and use the concept filter to narrow the guide.</p>
+          {studySet.studyGuide ? (
+            <StudyGuideRenderer activeConcept={activeConcept} content={studySet.studyGuide} />
+          ) : (
+            <div className="study-guide-preview-empty">
+              <p className="muted">The full study guide is still loading from the live service.</p>
+            </div>
+          )}
         </section>
       </article>
 
-      <article className="panel">
+      <article className="panel" ref={flashcardsSectionRef}>
         <h2>Flashcards</h2>
-        <div className="mobile-flashcard-section">
-          <MobileFlashcardTrainer cards={flashcards} />
-        </div>
-        <div className="flashcard-list desktop-flashcard-list">
-          {flashcards.map((card) => (
-            <FlashcardItem card={card} key={card.id} />
-          ))}
-        </div>
-        {hasMoreFlashcards ? (
-          <button className="secondary-button" disabled={isLoadingMoreFlashcards} onClick={() => void handleLoadMoreFlashcards()} type="button">
-            {isLoadingMoreFlashcards ? "Loading..." : "Load More Flashcards"}
-          </button>
-        ) : null}
+        <p className="muted small-copy">Use the mobile trainer for fast recall reps and build momentum one card at a time.</p>
+        {flashcards.length > 0 ? (
+          <>
+            <div className="mobile-flashcard-section">
+              <MobileFlashcardTrainer cards={flashcards} studySetId={studySet.id} />
+            </div>
+            <div className="flashcard-list desktop-flashcard-list">
+              {flashcards.map((card) => (
+                <FlashcardItem card={card} key={card.id} />
+              ))}
+            </div>
+            {hasMoreFlashcards ? (
+              <button className="secondary-button" disabled={isLoadingMoreFlashcards} onClick={() => void handleLoadMoreFlashcards()} type="button">
+                {isLoadingMoreFlashcards ? "Loading..." : "Load More Flashcards"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <div className="study-guide-preview-empty">
+            <p className="muted">Flashcards will appear here once the live study-set details finish loading.</p>
+          </div>
+        )}
       </article>
     </section>
   );

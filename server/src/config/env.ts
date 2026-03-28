@@ -16,6 +16,7 @@ const envSchema = z.object({
   GEMINI_EMBEDDING_DIMENSIONALITY: z.coerce.number().int().positive().max(3072).default(768),
   GEMINI_MAX_CONCURRENT_REQUESTS: z.coerce.number().int().positive().default(2),
   GEMINI_COOLDOWN_MS: z.coerce.number().int().positive().default(60000),
+  GEMINI_EXAM_TIMEOUT_MS: z.coerce.number().int().positive().default(9000),
   GEMINI_EMBEDDING_MAX_CHUNKS: z.coerce.number().int().positive().max(8).default(4),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required."),
   REDIS_URL: z.string().min(1, "REDIS_URL is required."),
