@@ -12,6 +12,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
   "dependencies": {
     "@automated-study-system/shared": "0.1.0",
     "@aws-sdk/client-s3": "^3.1017.0",
