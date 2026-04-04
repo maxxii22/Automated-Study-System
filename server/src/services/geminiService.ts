@@ -598,6 +598,7 @@ async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnRequest): Pro
     result: {
       questionId: payload.currentQuestion.id,
       question: payload.currentQuestion.prompt,
+      focusTopic: payload.currentQuestion.focusTopic,
       userAnswer: payload.userAnswer,
       idealAnswer: parsed.result.idealAnswer,
       feedback: parsed.result.feedback,

@@ -13,6 +13,7 @@ const examQuestionSchema = z.object({
 const examTurnSchema = z.object({
   questionId: z.string().min(1),
   question: z.string().min(1),
+  focusTopic: z.string().optional(),
   userAnswer: z.string().min(1),
   idealAnswer: z.string().min(1),
   feedback: z.string().min(1),
@@ -85,6 +86,13 @@ export async function saveExamSessionController(request: Request, response: Resp
     });
   }
 
-  const saved = await upsertExamSession(request.authUser!.id, parsed.data);
-  return response.json({ session: saved });
+  try {
+    const saved = await upsertExamSession(request.authUser!.id, parsed.data);
+    return response.json({ session: saved });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save exam session.";
+    const status = /another user/i.test(message) ? 409 : 500;
+
+    return response.status(status).json({ message });
+  }
 }

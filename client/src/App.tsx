@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./components/Layout";
@@ -52,6 +52,7 @@ export function App() {
               <Route path="/study-sets/:id" element={<StudySetPage />} />
               <Route path="/study-sets/:id/exam" element={<ExamPage />} />
             </Route>
+            <Route path="*" element={<Navigate replace to="/" />} />
           </Routes>
         </Suspense>
       </Layout>

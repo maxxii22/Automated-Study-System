@@ -14,6 +14,7 @@ export type ExamQuestion = {
 export type ExamTurnResult = {
   questionId: string;
   question: string;
+  focusTopic?: string;
   userAnswer: string;
   idealAnswer: string;
   feedback: string;

@@ -8,7 +8,7 @@ import { env, getAllowedClientOrigins } from "./config/env.js";
 import { prisma } from "./lib/prisma.js";
 import { inspectRedisSafety, redis } from "./lib/redis.js";
 import { createSocketServer } from "./lib/socket.js";
-import { logInfo } from "./lib/logger.js";
+import { logError, logInfo } from "./lib/logger.js";
 import { requireAuth } from "./middleware/auth.js";
 import { requestMetricsMiddleware } from "./middleware/metrics.js";
 import { getStudyQueueCounts } from "./queue/studyGenerationQueue.js";
@@ -96,7 +96,18 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   }
 
   if (error instanceof Error) {
-    return response.status(400).json({ message: error.message });
+    const maybeStatus = (error as Error & { status?: unknown }).status;
+    const status =
+      typeof maybeStatus === "number" && maybeStatus >= 400 && maybeStatus < 600
+        ? maybeStatus
+        : 500;
+
+    logError("Unhandled API error", {
+      error: error.message,
+      status
+    });
+
+    return response.status(status).json({ message: error.message });
   }
 
   return response.status(500).json({ message: "Unexpected server error." });

@@ -1,6 +1,6 @@
 import type { ExamQuestion, ExamSession, ExamSummary, ExamTurnResult } from "@automated-study-system/shared";
 
-import { Prisma } from "../../generated/prisma";
+import { Prisma } from "../../generated/prisma/index.js";
 
 import { prisma } from "../lib/prisma.js";
 
@@ -58,36 +58,40 @@ export async function getExamSession(ownerId: string, studySetId: string, sessio
 }
 
 export async function upsertExamSession(ownerId: string, session: ExamSession) {
-  const record = await prisma.examSession.upsert({
+  const existing = await prisma.examSession.findUnique({
     where: { id: session.id },
-    update: {
-      ownerId,
-      studySetId: session.studySetId,
-      completed: session.completed,
-      currentQuestion: session.currentQuestion,
-      turns: session.turns,
-      weakTopics: session.weakTopics,
-      cumulativeScore: session.cumulativeScore,
-      totalQuestionsTarget: session.totalQuestionsTarget,
-      summary: session.summary ? toJsonValue(session.summary) : Prisma.JsonNull,
-      startedAt: new Date(session.startedAt),
-      completedAt: session.completedAt ? new Date(session.completedAt) : null
-    },
-    create: {
-      id: session.id,
-      ownerId,
-      studySetId: session.studySetId,
-      completed: session.completed,
-      currentQuestion: session.currentQuestion,
-      turns: session.turns,
-      weakTopics: session.weakTopics,
-      cumulativeScore: session.cumulativeScore,
-      totalQuestionsTarget: session.totalQuestionsTarget,
-      summary: session.summary ? toJsonValue(session.summary) : Prisma.JsonNull,
-      startedAt: new Date(session.startedAt),
-      completedAt: session.completedAt ? new Date(session.completedAt) : null
-    }
+    select: { id: true, ownerId: true }
   });
+
+  if (existing && existing.ownerId !== ownerId) {
+    throw new Error("Exam session id already belongs to another user.");
+  }
+
+  const payload = {
+    ownerId,
+    studySetId: session.studySetId,
+    completed: session.completed,
+    currentQuestion: session.currentQuestion,
+    turns: session.turns,
+    weakTopics: session.weakTopics,
+    cumulativeScore: session.cumulativeScore,
+    totalQuestionsTarget: session.totalQuestionsTarget,
+    summary: session.summary ? toJsonValue(session.summary) : Prisma.JsonNull,
+    startedAt: new Date(session.startedAt),
+    completedAt: session.completedAt ? new Date(session.completedAt) : null
+  };
+
+  const record = existing
+    ? await prisma.examSession.update({
+        where: { id: session.id },
+        data: payload
+      })
+    : await prisma.examSession.create({
+        data: {
+          id: session.id,
+          ...payload
+        }
+      });
 
   return toExamSession(record);
 }

@@ -14,6 +14,7 @@ const examQuestionSchema = z.object({
 const examTurnSchema = z.object({
   questionId: z.string().min(1),
   question: z.string().min(5),
+  focusTopic: z.string().optional(),
   userAnswer: z.string().min(1),
   idealAnswer: z.string().min(1),
   feedback: z.string().min(1),

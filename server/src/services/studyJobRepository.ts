@@ -1,5 +1,5 @@
 import type { GenerateStudySetResponse, StudySetJob } from "@automated-study-system/shared";
-import type { Prisma } from "../../generated/prisma";
+import type { Prisma } from "../../generated/prisma/index.js";
 
 import { prisma } from "../lib/prisma.js";
 

@@ -497,7 +497,7 @@ function buildExamSummary(session: ExamSession): ExamSummary {
     totalQuestions: session.turns.length,
     averageScore,
     weakTopics: sortedTopics,
-    strongestTopic: strongestTurn?.weakTopics[0] ? undefined : session.currentQuestion.focusTopic
+    strongestTopic: strongestTurn?.weakTopics[0] ? undefined : strongestTurn?.focusTopic
   };
 }
 

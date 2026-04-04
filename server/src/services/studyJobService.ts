@@ -57,6 +57,21 @@ function assertRetryablePdfJob(
   }
 }
 
+function assertRetryableTextJob(
+  job: StudySetJob
+): asserts job is StudySetJob & {
+  sourceType: "text";
+  documentHash: string;
+} {
+  if (job.sourceType !== "text") {
+    throw new Error("Only text study jobs can be retried with inline document metadata.");
+  }
+
+  if (!job.documentHash) {
+    throw new Error("Study job is missing text document metadata and cannot be requeued.");
+  }
+}
+
 async function queuePdfStudyJob(ownerId: string, job: StudySetJob, title: string) {
   assertRetryablePdfJob(job);
   const documentHash = job.documentHash;
@@ -73,6 +88,33 @@ async function queuePdfStudyJob(ownerId: string, job: StudySetJob, title: string
     fileName,
     mimeType: "application/pdf"
   });
+}
+
+async function queueTextStudyJob(ownerId: string, job: StudySetJob, title: string) {
+  assertRetryableTextJob(job);
+  const document = await findDocumentByHashForOwner(ownerId, job.documentHash);
+
+  if (!document?.extractedText?.trim()) {
+    throw new Error("Text study job is missing extracted text and cannot be requeued.");
+  }
+
+  await enqueueStudyGenerationJob({
+    jobId: job.id,
+    ownerId,
+    title,
+    sourceType: "text",
+    sourceText: document.extractedText,
+    documentHash: job.documentHash
+  });
+}
+
+async function queueStudyJob(ownerId: string, job: StudySetJob, title: string) {
+  if (job.sourceType === "pdf") {
+    await queuePdfStudyJob(ownerId, job, title);
+    return;
+  }
+
+  await queueTextStudyJob(ownerId, job, title);
 }
 
 async function completeTextStudyJobFromGeneratedPayload(
@@ -356,8 +398,6 @@ export async function retryStudyJob(ownerId: string, jobId: string): Promise<Ret
     throw new Error("Study job not found.");
   }
 
-  assertRetryablePdfJob(job);
-
   if (job.status === "completed") {
     throw new Error("Completed study jobs do not need to be retried.");
   }
@@ -379,7 +419,7 @@ export async function retryStudyJob(ownerId: string, jobId: string): Promise<Ret
     job: requeuedJob
   });
 
-  await queuePdfStudyJob(ownerId, requeuedJob, job.title);
+  await queueStudyJob(ownerId, requeuedJob, job.title);
 
   return {
     job: requeuedJob,

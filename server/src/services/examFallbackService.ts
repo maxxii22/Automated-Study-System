@@ -223,6 +223,7 @@ export function evaluateExamTurnLocally(payload: EvaluateExamTurnRequest): Evalu
     result: {
       questionId: payload.currentQuestion.id,
       question: payload.currentQuestion.prompt,
+      focusTopic: payload.currentQuestion.focusTopic,
       userAnswer: payload.userAnswer,
       idealAnswer: buildIdealAnswer(payload.studySet, payload.currentQuestion),
       feedback: buildFallbackFeedback({

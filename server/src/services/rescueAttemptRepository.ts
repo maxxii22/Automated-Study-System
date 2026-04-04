@@ -1,5 +1,5 @@
 import type { ExamQuestion, RescueAttempt, RescueStatus } from "@automated-study-system/shared";
-import { Prisma } from "../../generated/prisma";
+import { Prisma } from "../../generated/prisma/index.js";
 
 import { prisma } from "../lib/prisma.js";
 
