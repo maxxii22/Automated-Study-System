@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
+import { CheckCircle2, LockKeyhole, Orbit, Sparkles, Stars } from "lucide-react";
+
+import { Reveal } from "@/components/Reveal";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
 import { useAuth } from "../components/AuthProvider";
-import { supabase } from "../lib/supabase";
+import { getSupabaseClient } from "../lib/supabase";
 
 type AuthMode = "signin" | "signup";
+
+const AUTH_EXPERIENCE_SIGNALS = [
+  "Saved study packs stay attached to you",
+  "Return to active jobs without losing context",
+  "Keep oral exam history and rescue progress in one place"
+] as const;
 
 function buildEmailRedirectUrl() {
   if (typeof window === "undefined") {
@@ -44,6 +59,8 @@ export function AuthPage() {
   const [isHandlingEmailLink, setIsHandlingEmailLink] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const authFeedbackId = "auth-feedback";
+  const authErrorId = "auth-error";
 
   const destination = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/saved";
 
@@ -89,6 +106,7 @@ export function AuthPage() {
         setIsHandlingEmailLink(true);
         setError(null);
         setMessage(null);
+        const supabase = await getSupabaseClient();
 
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
@@ -137,6 +155,8 @@ export function AuthPage() {
     setIsSubmitting(true);
 
     try {
+      const supabase = await getSupabaseClient();
+
       if (mode === "signup") {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -177,95 +197,186 @@ export function AuthPage() {
   }
 
   return (
-    <section className="page-grid auth-page">
-      <article className="panel auth-intro-panel">
-        <p className="eyebrow">Account Access</p>
-        <h1>{mode === "signin" ? "Pick up where you left off." : "Make your study space personal."}</h1>
-        <p className="muted auth-lead">
-          {mode === "signin"
-            ? "Sign in to reopen your saved study sets, resume PDF jobs, and keep oral exam practice tied to your account."
-            : "Create an account so every generated guide, flashcard set, and exam session stays attached to you."}
-        </p>
-
-        <div className="auth-feature-list">
-          <div className="auth-feature-card">
-            <strong>Saved Study History</strong>
-            <span>Study sets and oral exam sessions stay with your account across devices.</span>
+    <section className="relative px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.84fr)]">
+        <Reveal className="space-y-8">
+          <div className="space-y-5">
+            <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-100" variant="outline">
+              Account access
+            </Badge>
+            <h1 className="max-w-3xl font-[family-name:var(--font-display)] text-5xl leading-[0.95] text-white sm:text-6xl">
+              {mode === "signin" ? "Pick up your study momentum exactly where you left it." : "Give your study system memory."}
+            </h1>
+            <p className="max-w-2xl text-lg leading-8 text-zinc-300">
+              {mode === "signin"
+                ? "Sign in to reopen saved study packs, resume active jobs, and keep exam practice tied to your account."
+                : "Create an account so every guide, flashcard set, and oral exam session stays attached to you."}
+            </p>
           </div>
-          <div className="auth-feature-card">
-            <strong>Private Job Tracking</strong>
-            <span>Your uploads, queue progress, and generated results are scoped to you.</span>
+
+          <div className="flex flex-wrap gap-3">
+            {AUTH_EXPERIENCE_SIGNALS.map((signal) => (
+              <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[0.72rem] font-medium tracking-[0.16em] text-zinc-300" key={signal} variant="outline">
+                {signal}
+              </Badge>
+            ))}
           </div>
-          <div className="auth-feature-card">
-            <strong>Return Anytime</strong>
-            <span>Leave a long-running PDF job and come back later without losing your place.</span>
-          </div>
-        </div>
-      </article>
 
-      <article className="panel auth-form-panel">
-        <div className="auth-form-header">
-          <p className="eyebrow">{mode === "signin" ? "Welcome Back" : "New Here"}</p>
-          <h2>{mode === "signin" ? "Sign in to Study Sphere" : "Create your Study Sphere account"}</h2>
-          <p className="muted">
-            {mode === "signin"
-              ? "Use the email and password connected to your study history."
-              : "We only need a few basics to create your account and secure your saved work."}
-          </p>
-        </div>
+          <Card className="overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,181,111,0.06))] shadow-[0_28px_90px_rgba(0,0,0,0.24)]">
+            <CardContent className="grid gap-4 p-6 sm:grid-cols-3 sm:p-7">
+              {[
+                {
+                  icon: Orbit,
+                  title: "Saved Study History",
+                  copy: "Study sets, jobs, and oral exam sessions stay with your account across devices."
+                },
+                {
+                  icon: LockKeyhole,
+                  title: "Private by Default",
+                  copy: "Uploads, queue progress, and generated results remain scoped to your session."
+                },
+                {
+                  icon: Stars,
+                  title: "Return Anytime",
+                  copy: "Leave a long-running PDF job and come back later without losing your place."
+                }
+              ].map((item) => {
+                const Icon = item.icon;
 
-        {isHandlingEmailLink ? (
-          <div className="inline-feedback-warning">
-            <p className="flashcard-label">Verifying Email</p>
-            <p className="muted">We&apos;re confirming your email link and getting sign-in ready.</p>
-          </div>
-        ) : null}
+                return (
+                  <article className="space-y-3 rounded-[1.4rem] border border-white/8 bg-black/20 p-4" key={item.title}>
+                    <span className="inline-flex size-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-amber-200">
+                      <Icon className="size-5" />
+                    </span>
+                    <div className="space-y-2">
+                      <h2 className="text-lg font-semibold text-white">{item.title}</h2>
+                      <p className="text-sm leading-7 text-zinc-400">{item.copy}</p>
+                    </div>
+                  </article>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </Reveal>
 
-        <form className="field auth-form" onSubmit={handleSubmit}>
-          <label htmlFor="auth-email">Email</label>
-          <input
-            autoComplete="email"
-            id="auth-email"
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            type="email"
-            value={email}
-          />
+        <Reveal className="lg:pt-8" delay={0.08}>
+          <Card className="rounded-[2rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+            <CardContent className="space-y-7 p-6 sm:p-8">
+              <div className="space-y-3">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+                  {mode === "signin" ? "Welcome back" : "New here"}
+                </p>
+                <h2 className="font-[family-name:var(--font-display)] text-4xl leading-tight text-white">
+                  {mode === "signin" ? "Sign in to Study Sphere" : "Create your Study Sphere account"}
+                </h2>
+                <p className="text-sm leading-7 text-zinc-400">
+                  {mode === "signin"
+                    ? "Use the email and password connected to your study history."
+                    : "We only need a few basics to secure your saved work and let you keep building on it."}
+                </p>
+              </div>
 
-          <label htmlFor="auth-password">Password</label>
-          <input
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            id="auth-password"
-            minLength={6}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="At least 6 characters"
-            type="password"
-            value={password}
-          />
+              {isHandlingEmailLink ? (
+                <div
+                  aria-live="polite"
+                  className="rounded-[1.4rem] border border-white/10 bg-white/[0.05] px-4 py-4 text-sm leading-7 text-zinc-300"
+                  id={authFeedbackId}
+                  role="status"
+                >
+                  <p className="font-semibold text-white">Verifying your email</p>
+                  <p>We’re confirming your email link and getting sign-in ready.</p>
+                </div>
+              ) : null}
 
-          <button className="primary-button auth-submit-button" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
-          </button>
-        </form>
+              {message ? (
+                <div
+                  aria-live="polite"
+                  className="flex gap-3 rounded-[1.4rem] border border-emerald-300/20 bg-emerald-300/10 px-4 py-4 text-sm leading-7 text-emerald-100"
+                  id={authFeedbackId}
+                  role="status"
+                >
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
+                  <p>{message}</p>
+                </div>
+              ) : null}
 
-        {message ? <p className="success-text auth-feedback">{message}</p> : null}
-        {error ? <p className="error-text auth-feedback">{error}</p> : null}
+              {error ? (
+                <div
+                  className="rounded-[1.4rem] border border-rose-300/20 bg-rose-300/10 px-4 py-4 text-sm leading-7 text-rose-100"
+                  id={authErrorId}
+                  role="alert"
+                >
+                  {error}
+                </div>
+              ) : null}
 
-        <div className="auth-footer">
-          <span className="muted">{mode === "signin" ? "Need a new account?" : "Already have an account?"}</span>
-          <button
-            className="secondary-button compact-button"
-            onClick={() => {
-              setMode((current) => (current === "signin" ? "signup" : "signin"));
-              setError(null);
-              setMessage(null);
-            }}
-            type="button"
-          >
-            {mode === "signin" ? "Create one" : "Sign in instead"}
-          </button>
-        </div>
-      </article>
+              <form
+                aria-busy={isSubmitting || isHandlingEmailLink}
+                aria-describedby={error ? authErrorId : message || isHandlingEmailLink ? authFeedbackId : undefined}
+                className="space-y-5"
+                onSubmit={handleSubmit}
+              >
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-zinc-200" htmlFor="auth-email">
+                    Email
+                  </Label>
+                  <Input
+                    autoComplete="email"
+                    className="h-12 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-base text-white placeholder:text-zinc-500 focus-visible:border-amber-200/50 focus-visible:ring-amber-200/20"
+                    id="auth-email"
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    type="email"
+                    value={email}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-zinc-200" htmlFor="auth-password">
+                    Password
+                  </Label>
+                  <Input
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    className="h-12 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-base text-white placeholder:text-zinc-500 focus-visible:border-amber-200/50 focus-visible:ring-amber-200/20"
+                    id="auth-password"
+                    minLength={6}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="At least 6 characters"
+                    type="password"
+                    value={password}
+                  />
+                </div>
+
+                <Button
+                  className="h-12 w-full rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_36%,#bc7cff_100%)] text-sm font-semibold text-slate-950 shadow-[0_20px_48px_rgba(240,141,99,0.24)] hover:opacity-95"
+                  disabled={isSubmitting}
+                  type="submit"
+                >
+                  {isSubmitting ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
+                </Button>
+              </form>
+
+              <div className="flex flex-col items-start gap-3 rounded-[1.4rem] border border-white/8 bg-white/[0.03] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm text-zinc-400">
+                  {mode === "signin" ? "Need a new account?" : "Already have an account?"}
+                </span>
+                <Button
+                  className="h-10 rounded-full border border-white/10 bg-white/[0.05] px-5 text-sm font-semibold text-zinc-100 hover:bg-white/[0.08]"
+                  onClick={() => {
+                    setMode((current) => (current === "signin" ? "signup" : "signin"));
+                    setError(null);
+                    setMessage(null);
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  {mode === "signin" ? "Create one" : "Sign in instead"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </Reveal>
+      </div>
     </section>
   );
 }

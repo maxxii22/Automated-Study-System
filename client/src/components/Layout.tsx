@@ -1,55 +1,76 @@
-import { useEffect, useState, type PropsWithChildren } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { BookMarked, LogOut, Menu, Sparkles, UserRound } from "lucide-react";
+
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { preloadRoute } from "@/lib/routePreload";
+import { cn } from "@/lib/utils";
 
 import { useAuth } from "./AuthProvider";
+import { PrefetchLink } from "./PrefetchLink";
 import { StudySphereLogo } from "./StudySphereLogo";
 
-function UserIcon() {
-  return (
-    <svg aria-hidden="true" className="nav-icon-svg" fill="none" viewBox="0 0 24 24">
-      <circle cx="12" cy="7.5" r="4" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="M4.75 20.25c.55-4 3.45-6.25 7.25-6.25s6.7 2.25 7.25 6.25"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
+const NAV_ITEMS = [
+  { to: "/", label: "Home", meta: "Overview" },
+  { to: "/saved", label: "Saved", meta: "Library" },
+  { to: "/create", label: "Create", meta: "New pack" }
+] as const;
 
 export function Layout({ children }: PropsWithChildren) {
   const location = useLocation();
-  const isHome = location.pathname === "/";
   const { user, signOut } = useAuth();
-  const routeKey = `${location.pathname}${location.search}`;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const isHome = location.pathname === "/";
+  const routeKey = `${location.pathname}${location.search}`;
+  const handleRouteIntent = (pathname: string) => {
+    void preloadRoute(pathname);
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = "dark";
+
+    return () => {
+      document.documentElement.classList.remove("dark");
+      document.documentElement.style.colorScheme = "";
+    };
+  }, []);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
     setIsSignOutConfirmOpen(false);
   }, [location.pathname, location.search]);
 
-  useEffect(() => {
-    if (!isSignOutConfirmOpen) {
-      return;
+  const brandSubtitle = useMemo(() => {
+    if (location.pathname === "/") {
+      return "Cinematic study operating system";
     }
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsSignOutConfirmOpen(false);
-      }
+    if (location.pathname === "/create") {
+      return "Craft a premium study pack";
     }
 
-    document.addEventListener("keydown", handleKeyDown);
+    if (location.pathname === "/saved") {
+      return "Persistent learning library";
+    }
 
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isSignOutConfirmOpen]);
+    if (location.pathname === "/auth") {
+      return "Secure your study memory";
+    }
+
+    if (location.pathname.includes("/exam")) {
+      return "Adaptive oral exam workspace";
+    }
+
+    return "Guided revision cockpit";
+  }, [location.pathname]);
 
   async function handleConfirmedSignOut() {
     setIsSigningOut(true);
@@ -63,136 +84,243 @@ export function Layout({ children }: PropsWithChildren) {
     }
   }
 
-  const navItems = (
+  const navLinks = (
     <>
-      <Link className={location.pathname === "/" ? "nav-link active" : "nav-link"} to="/">
-        <span className="nav-link-label">Home</span>
-        <span className="nav-link-meta">Overview</span>
-      </Link>
-      <Link className={location.pathname === "/saved" ? "nav-link active" : "nav-link"} to="/saved">
-        <span className="nav-link-label">Saved</span>
-        <span className="nav-link-meta">Library</span>
-      </Link>
-      <Link className={location.pathname === "/create" ? "nav-link active" : "nav-link"} to="/create">
-        <span className="nav-link-label">Create</span>
-        <span className="nav-link-meta">New pack</span>
-      </Link>
-      {user ? (
-        <button
-          className="nav-link nav-button auth-nav-link"
-          onClick={() => {
-            setIsMobileMenuOpen(false);
-            setIsSignOutConfirmOpen(true);
-          }}
-          type="button"
+      {NAV_ITEMS.map((item) => (
+        <NavLink
+          className={({ isActive }) =>
+            cn(
+              "group flex min-w-[108px] flex-col rounded-full border px-4 py-2.5 text-left transition duration-200",
+              isActive
+                ? "border-white/18 bg-white/14 text-white shadow-[0_14px_30px_rgba(0,0,0,0.22)]"
+                : "border-white/8 bg-transparent text-zinc-300 hover:border-white/14 hover:bg-white/[0.05] hover:text-white"
+            )
+          }
+          key={item.to}
+          onFocus={() => handleRouteIntent(item.to)}
+          onMouseEnter={() => handleRouteIntent(item.to)}
+          to={item.to}
         >
-          <span className="nav-link-label">Sign Out</span>
-          <span className="nav-link-meta">Leave session</span>
-        </button>
-      ) : (
-        <Link
-          className={location.pathname === "/auth" ? "nav-link auth-nav-link active" : "nav-link auth-nav-link"}
-          to="/auth"
-        >
-          <span className="nav-link-label">Sign In</span>
-          <span className="nav-link-meta">Continue</span>
-        </Link>
-      )}
+          <span className="text-sm font-semibold">{item.label}</span>
+          <span className="text-[0.63rem] font-medium uppercase tracking-[0.22em] text-zinc-500 group-hover:text-zinc-400">
+            {item.meta}
+          </span>
+        </NavLink>
+      ))}
     </>
   );
 
   return (
-    <div className={isHome ? "shell landing-shell" : "shell"}>
-      <header className={isHome ? "topbar landing-topbar" : "topbar"}>
-        <Link className="brand" to="/">
-          <StudySphereLogo compact />
-          <span className="brand-copy">
-            <span className="brand-label">Study Sphere</span>
-            <span className="brand-subtitle">Study smarter with guided packs</span>
-          </span>
-        </Link>
-        <div className="topbar-actions">
-          {!user ? (
-            <Link aria-label="Sign in" className="nav-icon-button account-icon-button" to="/auth">
-              <UserIcon />
-            </Link>
-          ) : null}
+    <div className={cn("relative min-h-screen overflow-x-hidden", isHome && "bg-transparent")}>
+      <a
+        className="absolute left-4 top-4 z-50 -translate-y-20 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 opacity-0 shadow-[0_14px_30px_rgba(0,0,0,0.24)] transition focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+        href="#main-content"
+      >
+        Skip to content
+      </a>
 
-          <button
-            aria-controls="primary-nav"
-            aria-expanded={isMobileMenuOpen}
-            aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
-            className={isMobileMenuOpen ? "nav-icon-button menu-toggle is-open" : "nav-icon-button menu-toggle"}
-            onClick={() => setIsMobileMenuOpen((current) => !current)}
-            type="button"
-          >
-            <span className="menu-toggle-line" />
-            <span className="menu-toggle-line" />
-            <span className="menu-toggle-line" />
-          </button>
-        </div>
-        <nav aria-label="Primary" className="nav desktop-nav" id="primary-nav">
-          <div className="nav-surface">{navItems}</div>
-        </nav>
-      </header>
-      {isMobileMenuOpen ? (
+      <div aria-hidden="true" className="global-ambient">
+        <span className="global-ambient-orb global-ambient-orb-a" />
+        <span className="global-ambient-orb global-ambient-orb-b" />
+        <span className="global-ambient-orb global-ambient-orb-c" />
+        <span className="global-grid" />
+      </div>
+
+      <header className="sticky top-0 z-40 px-3 pb-3 pt-3 sm:px-6 lg:px-8">
         <div
-          aria-hidden="true"
-          className="mobile-nav-overlay"
-          onClick={() => setIsMobileMenuOpen(false)}
+          className={cn(
+            "mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-[1.9rem] border border-white/10 bg-black/28 px-3.5 py-2.5 shadow-[0_24px_50px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:gap-4 sm:px-5 sm:py-3",
+            isHome && "bg-black/24"
+          )}
         >
-          <nav
-            aria-label="Primary"
-            className="nav mobile-nav is-mobile-open"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="nav-surface">{navItems}</div>
+          <PrefetchLink className="flex min-w-0 items-center gap-2.5 sm:gap-3" to="/">
+            <StudySphereLogo compact />
+            <span className="min-w-0">
+              <span className="block truncate font-[family-name:var(--font-display)] text-[1.85rem] leading-none tracking-tight text-white sm:text-2xl">
+                Study Sphere
+              </span>
+              <span className="mt-1 hidden truncate text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-zinc-500 sm:block">
+                {brandSubtitle}
+              </span>
+            </span>
+          </PrefetchLink>
+
+          <nav aria-label="Primary" className="hidden items-center gap-2 xl:flex">
+            {navLinks}
           </nav>
-        </div>
-      ) : null}
-      {user && isSignOutConfirmOpen ? (
-        <div
-          aria-hidden="true"
-          className="signout-overlay"
-          onClick={() => setIsSignOutConfirmOpen(false)}
-        >
-          <div
-            aria-label="Sign out confirmation"
-            aria-modal="true"
-            className="signout-popover"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <p className="signout-popover-title">Sign out?</p>
-            <p className="signout-popover-copy">You’ll need to sign in again to continue your study session.</p>
-            <div className="signout-popover-actions">
-              <button
-                className="secondary-button compact-button"
-                onClick={() => setIsSignOutConfirmOpen(false)}
-                type="button"
+
+          <div className="hidden items-center gap-2 xl:flex">
+            {user ? (
+              <Button
+                className="h-11 rounded-full border border-white/10 bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 hover:bg-white/[0.08]"
+                onClick={() => setIsSignOutConfirmOpen(true)}
+                variant="ghost"
               >
-                Cancel
-              </button>
-              <button
-                className="primary-button compact-button"
-                disabled={isSigningOut}
-                onClick={() => void handleConfirmedSignOut()}
-                type="button"
+                <LogOut className="size-4" />
+                Sign Out
+              </Button>
+            ) : (
+              <Button
+                asChild
+                className="h-11 rounded-full border border-white/10 bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 hover:bg-white/[0.08]"
+                variant="ghost"
               >
-                {isSigningOut ? "Signing out..." : "Sign Out"}
-              </button>
-            </div>
+                <PrefetchLink to="/auth">
+                  <UserRound className="size-4" />
+                  Sign In
+                </PrefetchLink>
+              </Button>
+            )}
+            <Button
+              asChild
+              className="h-11 rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_34%,#bc7cff_100%)] px-5 text-sm font-semibold text-slate-950 shadow-[0_18px_40px_rgba(240,141,99,0.22)] hover:opacity-95"
+            >
+              <PrefetchLink to="/create">
+                <Sparkles className="size-4" />
+                Start Creating
+              </PrefetchLink>
+            </Button>
           </div>
+
+          <Sheet onOpenChange={setIsMobileMenuOpen} open={isMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button
+                className="size-11 rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08] xl:hidden"
+                size="icon-lg"
+                variant="ghost"
+              >
+                <Menu className="size-5" />
+                <span className="sr-only">Open navigation</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              className="w-[86vw] max-w-sm border-white/10 bg-[#090d15]/96 p-0 text-white shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
+              side="right"
+            >
+              <SheetHeader className="gap-4 border-b border-white/8 px-5 py-5">
+                <div className="flex items-center gap-3">
+                  <StudySphereLogo compact />
+                  <div>
+                    <SheetTitle className="font-[family-name:var(--font-display)] text-2xl text-white">Study Sphere</SheetTitle>
+                    <SheetDescription className="text-zinc-400">The cinematic study system for return visits.</SheetDescription>
+                  </div>
+                </div>
+              </SheetHeader>
+
+              <div className="flex flex-col gap-3 px-5 py-5">
+                {NAV_ITEMS.map((item) => (
+                  <NavLink
+                    className={({ isActive }) =>
+                      cn(
+                        "rounded-[1.4rem] border px-4 py-4 transition",
+                        isActive
+                          ? "border-white/14 bg-white/10 text-white"
+                          : "border-white/8 bg-white/[0.03] text-zinc-300 hover:border-white/12 hover:bg-white/[0.06]"
+                      )
+                    }
+                    key={item.to}
+                    onFocus={() => handleRouteIntent(item.to)}
+                    onMouseEnter={() => handleRouteIntent(item.to)}
+                    to={item.to}
+                  >
+                    <span className="block text-base font-semibold">{item.label}</span>
+                    <span className="mt-1 block text-[0.68rem] font-medium uppercase tracking-[0.24em] text-zinc-500">
+                      {item.meta}
+                    </span>
+                  </NavLink>
+                ))}
+              </div>
+
+              <div className="mt-auto border-t border-white/8 px-5 py-5">
+                <div className="flex flex-col gap-3">
+                  {user ? (
+                    <Button
+                      className="h-12 rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
+                      onClick={() => setIsSignOutConfirmOpen(true)}
+                      variant="ghost"
+                    >
+                      <LogOut className="size-4" />
+                      Sign Out
+                    </Button>
+                  ) : (
+                    <Button
+                      asChild
+                      className="h-12 rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
+                      variant="ghost"
+                    >
+                      <PrefetchLink to="/auth">
+                        <UserRound className="size-4" />
+                        Sign In
+                      </PrefetchLink>
+                    </Button>
+                  )}
+                  <Button
+                    asChild
+                    className="h-12 rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_34%,#bc7cff_100%)] text-slate-950 shadow-[0_18px_40px_rgba(240,141,99,0.22)] hover:opacity-95"
+                  >
+                    <PrefetchLink to="/create">
+                      <Sparkles className="size-4" />
+                      Start Creating
+                    </PrefetchLink>
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
-      ) : null}
-      <main className="route-shell">
-        <div className="route-stage" key={routeKey}>
-          {children}
+      </header>
+
+      <main className="relative z-10" id="main-content" tabIndex={-1}>
+        <div className={cn(isHome ? "w-full" : "mx-auto w-full max-w-7xl px-4 pb-20 sm:px-6 lg:px-8")}>
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 12 }}
+              initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 18 }}
+              key={routeKey}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
-      <footer className={isHome ? "app-credit app-credit-home" : "app-credit"}>
-        <span>Developed by Maxxii inc</span>
+
+      <footer className="relative z-10 px-4 pb-8 pt-4 text-center sm:px-6 lg:px-8">
+        <div className={cn("mx-auto max-w-7xl", isHome && "max-w-none")}>
+          <p className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+            <BookMarked className="size-3.5" />
+            Study Sphere by Maxxii Inc
+          </p>
+        </div>
       </footer>
+
+      <AlertDialog onOpenChange={setIsSignOutConfirmOpen} open={user ? isSignOutConfirmOpen : false}>
+        <AlertDialogContent className="rounded-[1.8rem] border-white/10 bg-[#0d111b]/96 text-white shadow-[0_30px_90px_rgba(0,0,0,0.52)]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-[family-name:var(--font-display)] text-3xl text-white">
+              Sign out?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base leading-7 text-zinc-400">
+              You’ll need to sign in again to resume your saved study sets, jobs, and revision history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-3 sm:justify-start">
+            <AlertDialogCancel className="h-11 rounded-full border-white/10 bg-white/[0.04] px-5 text-zinc-100 hover:bg-white/[0.08]">
+              Stay Signed In
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="h-11 rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_34%,#bc7cff_100%)] px-5 text-slate-950 shadow-[0_18px_40px_rgba(240,141,99,0.22)] hover:opacity-95"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmedSignOut();
+              }}
+            >
+              {isSigningOut ? "Signing Out..." : "Sign Out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

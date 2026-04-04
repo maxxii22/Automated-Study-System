@@ -1,9 +1,9 @@
-import type { PropsWithChildren } from "react";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type PropsWithChildren } from "react";
+import { useLocation } from "react-router-dom";
 
 import type { Session, User } from "@supabase/supabase-js";
 
-import { getCachedSession, supabase } from "../lib/supabase";
+import { getCachedSession, hydrateSession, signOut as signOutFromSupabase, subscribeToAuthState } from "../lib/supabase";
 
 type AuthContextValue = {
   user: User | null;
@@ -15,44 +15,80 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function syncAuthState(
+  nextSession: Session | null,
+  setSession: (session: Session | null) => void,
+  setUser: (user: User | null) => void,
+  setAccessToken: (accessToken: string | null) => void
+) {
+  setSession(nextSession);
+  setUser(nextSession?.user ?? null);
+  setAccessToken(nextSession?.access_token ?? null);
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const location = useLocation();
+  const initialSession = getCachedSession();
+  const [session, setSession] = useState<Session | null>(initialSession);
+  const [user, setUser] = useState<User | null>(initialSession?.user ?? null);
+  const [accessToken, setAccessToken] = useState<string | null>(initialSession?.access_token ?? null);
+  const [isLoading, setIsLoading] = useState(location.pathname !== "/");
+  const authReadyPromiseRef = useRef<Promise<void> | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  const ensureAuthReady = useCallback(
+    async (shouldBlock: boolean) => {
+      if (shouldBlock) {
+        setIsLoading(true);
+      }
+
+      if (!authReadyPromiseRef.current) {
+        authReadyPromiseRef.current = (async () => {
+          if (!unsubscribeRef.current) {
+            unsubscribeRef.current = await subscribeToAuthState((nextSession) => {
+              syncAuthState(nextSession, setSession, setUser, setAccessToken);
+              setIsLoading(false);
+            });
+          }
+
+          const nextSession = await hydrateSession();
+          syncAuthState(nextSession, setSession, setUser, setAccessToken);
+          setIsLoading(false);
+        })().catch((error) => {
+          authReadyPromiseRef.current = null;
+          setIsLoading(false);
+          throw error;
+        });
+      }
+
+      await authReadyPromiseRef.current;
+      setIsLoading(false);
+    },
+    []
+  );
 
   useEffect(() => {
-    let ignore = false;
-    const initialSession = getCachedSession();
+    let timeoutId: number | null = null;
+    const needsImmediateAuth = location.pathname !== "/";
 
-    if (initialSession) {
-      setSession(initialSession);
-      setUser(initialSession.user ?? null);
-      setAccessToken(initialSession.access_token ?? null);
-      setIsLoading(false);
+    if (needsImmediateAuth) {
+      void ensureAuthReady(true).catch(() => undefined);
+    } else {
+      timeoutId = window.setTimeout(() => {
+        void ensureAuthReady(false).catch(() => undefined);
+      }, 1200);
     }
 
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!ignore) {
-        setSession(data.session);
-        setUser(data.session?.user ?? null);
-        setAccessToken(data.session?.access_token ?? null);
-        setIsLoading(false);
-      }
-    });
-
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setAccessToken(nextSession?.access_token ?? null);
-      setIsLoading(false);
-    });
-
     return () => {
-      ignore = true;
-      subscription.unsubscribe();
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [ensureAuthReady, location.pathname]);
+
+  useEffect(() => {
+    return () => {
+      unsubscribeRef.current?.();
     };
   }, []);
 
@@ -64,7 +100,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         accessToken,
         isLoading,
         signOut: async () => {
-          await supabase.auth.signOut();
+          await ensureAuthReady(false);
+          await signOutFromSupabase();
         }
       }}
     >

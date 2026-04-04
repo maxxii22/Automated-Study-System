@@ -12,5 +12,5 @@ interface ImportMeta {
 }
 
 interface Window {
-  supabase?: typeof import("./lib/supabase").supabase;
+  supabase?: import("@supabase/supabase-js").SupabaseClient;
 }

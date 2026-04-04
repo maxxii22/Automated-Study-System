@@ -8,6 +8,7 @@
     "shared"
   ],
   "scripts": {
+    "postinstall": "npm run prisma:generate --workspace server",
     "start": "concurrently \"npm run dev:server\" \"npm run dev:worker\" \"npm run dev:client\"",
     "dev": "npm run dev --workspace client",
     "dev:client": "npm run dev --workspace client",

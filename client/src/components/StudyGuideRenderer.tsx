@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 type StudyGuideRendererProps = {
   content: string;
   activeConcept?: string | null;
@@ -140,64 +142,88 @@ export function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendere
   }
 
   if (guideSections.length === 0) {
-    return <p className="muted">No study guide sections matched this key concept yet.</p>;
+    return <p className="text-sm text-zinc-400">No study guide sections matched this key concept yet.</p>;
   }
 
   return (
-    <div className="study-guide-stack">
-      {guideSections.map((section, index) => (
-        <article
-          className={section.tone === "focus" ? "study-guide-item study-guide-item-focus" : "study-guide-item study-guide-item-support"}
-          key={section.id}
-        >
-          <button
-            aria-expanded={openSections[section.id] ?? false}
-            className="study-guide-toggle"
-            onClick={() =>
-              setOpenSections((current) => ({
-                ...current,
-                [section.id]: !current[section.id]
-              }))
-            }
-            type="button"
+    <div className="space-y-4">
+      {guideSections.map((section, index) => {
+        const isOpen = openSections[section.id] ?? false;
+        const buttonId = `${section.id}-button`;
+        const contentId = `${section.id}-content`;
+
+        return (
+          <article
+            className={cn(
+              "overflow-hidden rounded-[1.5rem] border shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-colors",
+              section.tone === "focus"
+                ? "border-white/12 bg-white/[0.05]"
+                : "border-white/8 bg-white/[0.03]"
+            )}
+            key={section.id}
           >
-            <span className="study-guide-toggle-copy">
-              <span className="study-guide-step-label">Section {index + 1}</span>
-              <h4 className="study-guide-section-title">{section.title}</h4>
-            </span>
-            <span className="study-guide-toggle-mark">{openSections[section.id] ? "−" : "+"}</span>
-          </button>
+            <button
+              aria-controls={contentId}
+              aria-expanded={isOpen}
+              className="flex w-full items-start justify-between gap-4 px-5 py-5 text-left transition hover:bg-white/[0.03]"
+              id={buttonId}
+              onClick={() =>
+                setOpenSections((current) => ({
+                  ...current,
+                  [section.id]: !current[section.id]
+                }))
+              }
+              type="button"
+            >
+              <span className="space-y-2">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+                  Section {index + 1}
+                </span>
+                <span className="block font-[family-name:var(--font-display)] text-xl leading-tight text-white">
+                  {section.title}
+                </span>
+              </span>
+              <span className="mt-1 text-lg text-zinc-400">{isOpen ? "−" : "+"}</span>
+            </button>
 
-          {openSections[section.id] ? (
-            <div className="study-guide-content">
-              {section.keyIdea ? (
-                <div className="study-guide-detail-block">
-                  <span className="study-guide-detail-label">Key Idea</span>
-                  <p>{section.keyIdea}</p>
-                </div>
-              ) : null}
+            {isOpen ? (
+              <div
+                aria-labelledby={buttonId}
+                className="space-y-4 border-t border-white/8 px-5 py-5"
+                id={contentId}
+                role="region"
+              >
+                {section.keyIdea ? (
+                  <div className="rounded-[1.25rem] border border-white/8 bg-black/20 p-4">
+                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-500">Key idea</span>
+                    <p className="mt-3 text-sm leading-7 text-zinc-300">{section.keyIdea}</p>
+                  </div>
+                ) : null}
 
-              {section.points.length > 0 ? (
-                <div className="study-guide-detail-block">
-                  <span className="study-guide-detail-label">Key Points</span>
-                  <ul className="study-guide-point-list">
-                    {section.points.map((point) => (
-                      <li key={`${section.id}-${point.slice(0, 24)}`}>{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+                {section.points.length > 0 ? (
+                  <div className="rounded-[1.25rem] border border-white/8 bg-black/20 p-4">
+                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-500">Key points</span>
+                    <ul className="mt-3 space-y-3 pl-5 text-sm leading-7 text-zinc-300">
+                      {section.points.map((point) => (
+                        <li key={`${section.id}-${point.slice(0, 24)}`}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
 
-              {section.examFocus ? (
-                <div className="study-guide-detail-block study-guide-exam-focus">
-                  <span className="study-guide-detail-label">Exam Focus</span>
-                  <p>{section.examFocus}</p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </article>
-      ))}
+                {section.examFocus ? (
+                  <div className="rounded-[1.25rem] border border-amber-300/12 bg-[linear-gradient(180deg,rgba(255,184,108,0.08),rgba(255,184,108,0.02))] p-4">
+                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-amber-100/75">
+                      Exam focus
+                    </span>
+                    <p className="mt-3 text-sm leading-7 text-zinc-200">{section.examFocus}</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }

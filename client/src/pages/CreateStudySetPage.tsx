@@ -3,7 +3,20 @@ import { useNavigate } from "react-router-dom";
 
 import type { GenerateStudySetResponse, StudySetJob } from "@automated-study-system/shared";
 
-import { StudyGuideRenderer } from "../components/StudyGuideRenderer";
+import { ArrowRight, FileText, Link2, Stars, TextQuote, UploadCloud } from "lucide-react";
+
+import { Reveal } from "@/components/Reveal";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+
 import {
   createPdfStudyJob,
   createTextStudyJob,
@@ -12,175 +25,24 @@ import {
   saveStudySet,
   subscribeToStudyJob
 } from "../lib/api";
-
-const starterText = `Photosynthesis is the process by which green plants use sunlight, water, and carbon dioxide to produce glucose and oxygen. Chlorophyll in the chloroplast absorbs light energy, which powers the chemical reactions needed for this conversion.`;
-const starterTitle = "Photosynthesis Basics";
-const ACTIVE_JOB_STORAGE_KEY = "study-sphere.active-study-job-id";
-const JOB_STAGE_LABELS: Record<string, string> = {
-  queued: "Queued",
-  uploaded: "Upload complete",
-  "downloading-source": "Preparing document",
-  "extracting-text": "Reading PDF text",
-  "checking-semantic-cache": "Checking for a similar study set",
-  "semantic-cache-hit": "Similar study set found",
-  "generating-study-pack": "Generating flashcards and guide",
-  "persisting-study-pack": "Saving your study set",
-  completed: "Ready",
-  failed: "Failed"
-};
-
-function toUserFacingGenerationError(message: string | null | undefined) {
-  const fallback = "Something went wrong while preparing your study pack. Please try again.";
-
-  if (!message) {
-    return fallback;
-  }
-
-  const normalized = message.trim();
-
-  if (
-    /resource_exhausted|quota|rate limit|429|free_tier_requests|please retry in|billing details/i.test(normalized)
-  ) {
-    return "Study generation is temporarily busy right now. Please retry in a few minutes.";
-  }
-
-  if (/access denied|accessdenied/i.test(normalized)) {
-    return "The uploaded file could not be stored right now. Please try again in a moment.";
-  }
-
-  if (/enoent|no such file or directory/i.test(normalized)) {
-    return "The uploaded file could not be read by the worker. Please retry generation.";
-  }
-
-  if (/not found for api version|generatecontent/i.test(normalized)) {
-    return "The selected AI model is not available for this action right now. Please try again shortly.";
-  }
-
-  if (/failed to fetch|networkerror|network request failed/i.test(normalized)) {
-    return "We couldn't reach the server right now. Please check your connection and try again.";
-  }
-
-  if (/session is invalid|sign in again|expired|401|403/i.test(normalized)) {
-    return "Your session expired. Please sign in again and retry.";
-  }
-
-  if (/study generation request failed|job failed|request failed/i.test(normalized)) {
-    return "Study generation could not be completed right now. Please retry in a moment.";
-  }
-
-  return normalized.length > 120 ? fallback : normalized;
-}
-
-function formatPdfTitle(fileName: string) {
-  return fileName
-    .replace(/\.pdf$/i, "")
-    .replace(/^.*?(?=[A-Za-z])/, "")
-    .replace(/\b(?:oceanofpdf\.com|oceanofpdf|www)\b/gi, "")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 70);
-}
-
-function deriveTitleFromContent(title: string, sourceUrl: string, sourceText: string, sourceFile: File | null) {
-  if (title.trim()) {
-    return title.trim();
-  }
-
-  if (sourceFile) {
-    return formatPdfTitle(sourceFile.name);
-  }
-
-  if (sourceUrl.trim()) {
-    try {
-      const parsed = new URL(sourceUrl.trim());
-      const lastSegment = parsed.pathname.split("/").filter(Boolean).at(-1);
-      const isOpaqueVideoId = Boolean(lastSegment && /^[A-Za-z0-9_-]{8,20}$/.test(lastSegment));
-      const fromPath = isOpaqueVideoId ? "" : lastSegment?.replace(/[_-]+/g, " ").trim();
-
-      if (fromPath) {
-        return fromPath;
-      }
-
-      if (parsed.hostname.includes("youtube.com") || parsed.hostname.includes("youtu.be")) {
-        return "YouTube Study Set";
-      }
-
-      return parsed.hostname.replace(/^www\./, "");
-    } catch {
-      return sourceUrl.trim().replace(/^https?:\/\//, "").slice(0, 60);
-    }
-  }
-
-  if (sourceText.trim()) {
-    return sourceText
-      .trim()
-      .replace(/\s+/g, " ")
-      .split(" ")
-      .slice(0, 6)
-      .join(" ");
-  }
-
-  return "";
-}
-
-function storeActiveJobId(jobId: string | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!jobId) {
-    window.sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
-    return;
-  }
-
-  window.sessionStorage.setItem(ACTIVE_JOB_STORAGE_KEY, jobId);
-}
-
-function readStoredActiveJobId() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.sessionStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
-}
-
-function buildPreviewStudySet(studySet: GenerateStudySetResponse | null) {
-  if (!studySet) {
-    return null;
-  }
-
-  return {
-    summary: studySet.summary,
-    studyGuide: studySet.studyGuide,
-    keyConcepts: studySet.keyConcepts,
-    flashcards: studySet.flashcards
-  };
-}
-
-const OUTPUT_PREVIEW_SECTIONS = [
-  {
-    title: "Summary",
-    headline: "Short, structured notes from your content",
-    copy: "A quick overview that pulls the main ideas into a clean, easy-to-review starting point."
-  },
-  {
-    title: "Flashcards",
-    headline: "Key concepts turned into active recall cards",
-    copy: "Important ideas become question-and-answer cards you can use to test yourself fast."
-  },
-  {
-    title: "Practice",
-    headline: "Quick questions based on your notes",
-    copy: "Your study set can feed straight into oral exam practice and weak-topic review."
-  }
-] as const;
+import { CreateSourceOptionCard } from "./create/CreateSourceOptionCard";
+import { CreateStudySetPreview } from "./create/CreateStudySetPreview";
+import {
+  buildPreviewStudySet,
+  CREATE_SURFACE_CARDS,
+  deriveTitleFromContent,
+  formatPdfTitle,
+  JOB_STAGE_LABELS,
+  PREVIEW_HIGHLIGHTS,
+  readStoredActiveJobId,
+  starterText,
+  starterTitle,
+  storeActiveJobId,
+  toUserFacingGenerationError
+} from "./create/createStudySetPageData";
 
 export function CreateStudySetPage() {
   const navigate = useNavigate();
-  const pasteTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const pasteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const pdfTriggerRef = useRef<HTMLButtonElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const lastTextPayloadRef = useRef<{ title: string; sourceText: string } | null>(null);
   const lastPdfTitleRef = useRef<string | null>(null);
@@ -195,7 +57,6 @@ export function CreateStudySetPage() {
   const [isRestoringJob, setIsRestoringJob] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -277,10 +138,7 @@ export function CreateStudySetPage() {
 
   useEffect(() => {
     const storedJobId = readStoredActiveJobId();
-
-    if (!storedJobId) {
-      return;
-    }
+    if (!storedJobId) return;
 
     let ignore = false;
 
@@ -288,10 +146,7 @@ export function CreateStudySetPage() {
       try {
         setIsRestoringJob(true);
         const response = await fetchStudyJob(storedJobId);
-
-        if (ignore) {
-          return;
-        }
+        if (ignore) return;
 
         setActiveJob(response.job);
 
@@ -316,9 +171,7 @@ export function CreateStudySetPage() {
           setError(requestError instanceof Error ? requestError.message : "Could not restore the active PDF job.");
         }
       } finally {
-        if (!ignore) {
-          setIsRestoringJob(false);
-        }
+        if (!ignore) setIsRestoringJob(false);
       }
     };
 
@@ -330,7 +183,54 @@ export function CreateStudySetPage() {
     };
   }, [clearJobState, clearJobSubscription, handleTextJobCompletion, navigate, subscribeToActiveJob]);
 
+  useEffect(() => {
+    if (!activeJob || isStudyJobTerminal(activeJob) || !isSocketFallbackPolling) return;
+
+    const intervalId = window.setInterval(() => {
+      void fetchStudyJob(activeJob.id)
+        .then((response) => {
+          setActiveJob(response.job);
+
+          if (response.job.status === "completed") {
+            if (response.job.sourceType === "pdf" && response.job.studySetId) {
+              storeActiveJobId(null);
+              navigate(`/study-sets/${response.job.studySetId}`);
+              return;
+            }
+
+            if (response.job.sourceType === "text") handleTextJobCompletion(response.job);
+          }
+
+          if (response.job.status === "failed") {
+            storeActiveJobId(null);
+            clearJobSubscription();
+            handleJobFailure(response.job.errorMessage);
+          }
+        })
+        .catch(() => undefined);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeJob, clearJobSubscription, handleJobFailure, handleTextJobCompletion, isSocketFallbackPolling, navigate]);
+
+  useEffect(() => clearJobSubscription, [clearJobSubscription]);
+
   const resultPreview = useMemo(() => buildPreviewStudySet(result), [result]);
+  const hasSourceUrl = sourceUrl.trim().length > 0;
+  const hasSourceText = sourceText.trim().length > 0;
+  const isGeneratingPreview = isSubmitting || Boolean(activeJob && !isStudyJobTerminal(activeJob));
+  const previewJobSourceType = activeJob?.sourceType ?? sourceType;
+  const currentStep = resultPreview ? 4 : isGeneratingPreview ? 3 : hasSourceText || hasSourceUrl || sourceFile ? 3 : 2;
+  const progressValue = typeof activeJob?.progressPercent === "number" ? Math.max(activeJob.progressPercent, 8) : isGeneratingPreview ? 14 : 0;
+  const jobStageText = activeJob?.stage ? (JOB_STAGE_LABELS[activeJob.stage] ?? activeJob.stage) : "Queued";
+  const jobStatusLabel = activeJob ? `${jobStageText}${typeof activeJob.progressPercent === "number" ? ` • ${activeJob.progressPercent}%` : ""}` : null;
+  const showMobilePreviewFirst = isGeneratingPreview || isRestoringJob || Boolean(resultPreview);
+  const sourceTextHelpId = "create-source-text-help";
+  const sourceTextCountId = "create-source-text-count";
+  const generationErrorId = "create-generation-error";
+  const canRetryGeneration =
+    !isSubmitting &&
+    ((sourceType === "text" && lastTextPayloadRef.current !== null) || (sourceType === "pdf" && sourceFile !== null && lastPdfTitleRef.current));
 
   function resetTextInputs() {
     setSourceUrl("");
@@ -346,7 +246,6 @@ export function CreateStudySetPage() {
     setSourceText(starterText);
     setResult(null);
     setError(null);
-    setIsPasteModalOpen(false);
   }
 
   function clearPdfSelection() {
@@ -367,10 +266,6 @@ export function CreateStudySetPage() {
     setIsPdfModalOpen(false);
   }
 
-  function openPdfPicker() {
-    pdfInputRef.current?.click();
-  }
-
   async function retryLastGeneration() {
     setError(null);
     setResult(null);
@@ -378,10 +273,7 @@ export function CreateStudySetPage() {
 
     try {
       if (sourceType === "pdf") {
-        if (!sourceFile || !lastPdfTitleRef.current) {
-          throw new Error("Choose the PDF again before retrying.");
-        }
-
+        if (!sourceFile || !lastPdfTitleRef.current) throw new Error("Choose the PDF again before retrying.");
         const created = await createPdfStudyJob({ title: lastPdfTitleRef.current }, sourceFile);
         setActiveJob(created.job);
         setIsSocketFallbackPolling(false);
@@ -390,20 +282,12 @@ export function CreateStudySetPage() {
         return;
       }
 
-      if (!lastTextPayloadRef.current) {
-        throw new Error("Add your text again before retrying.");
-      }
-
+      if (!lastTextPayloadRef.current) throw new Error("Add your text again before retrying.");
       const created = await createTextStudyJob(lastTextPayloadRef.current);
       setActiveJob(created.job);
       setIsSocketFallbackPolling(false);
       storeActiveJobId(created.job.id);
-
-      if (created.job.status === "completed" && created.job.generatedStudySet) {
-        handleTextJobCompletion(created.job);
-        return;
-      }
-
+      if (created.job.status === "completed" && created.job.generatedStudySet) return handleTextJobCompletion(created.job);
       subscribeToActiveJob(created.job.id);
     } catch (retryError) {
       setError(toUserFacingGenerationError(retryError instanceof Error ? retryError.message : "Could not retry generation."));
@@ -412,107 +296,15 @@ export function CreateStudySetPage() {
     }
   }
 
-  useEffect(() => {
-    if (!activeJob || isStudyJobTerminal(activeJob) || !isSocketFallbackPolling) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void fetchStudyJob(activeJob.id)
-        .then((response) => {
-          setActiveJob(response.job);
-
-          if (response.job.status === "completed") {
-            if (response.job.sourceType === "pdf" && response.job.studySetId) {
-              storeActiveJobId(null);
-              navigate(`/study-sets/${response.job.studySetId}`);
-              return;
-            }
-
-            if (response.job.sourceType === "text") {
-              handleTextJobCompletion(response.job);
-            }
-          }
-
-          if (response.job.status === "failed") {
-            storeActiveJobId(null);
-            clearJobSubscription();
-            handleJobFailure(response.job.errorMessage);
-          }
-        })
-        .catch(() => undefined);
-    }, 5000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [activeJob, clearJobSubscription, handleJobFailure, handleTextJobCompletion, isSocketFallbackPolling, navigate]);
-
-  useEffect(() => clearJobSubscription, [clearJobSubscription]);
-
-  useEffect(() => {
-    if (!isPasteModalOpen && !isPdfModalOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const focusTimer = window.setTimeout(() => {
-      if (isPasteModalOpen) {
-        pasteTextareaRef.current?.focus();
-        return;
-      }
-
-      if (isPdfModalOpen) {
-        pdfInputRef.current?.focus();
-      }
-    }, 0);
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsPasteModalOpen(false);
-        setIsPdfModalOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.clearTimeout(focusTimer);
-      window.removeEventListener("keydown", handleKeyDown);
-      if (isPasteModalOpen) {
-        pasteTriggerRef.current?.focus();
-      }
-
-      if (isPdfModalOpen) {
-        pdfTriggerRef.current?.focus();
-      }
-    };
-  }, [isPasteModalOpen, isPdfModalOpen]);
-
   async function handleSave() {
-    if (!result) {
-      return;
-    }
-
+    if (!result) return;
     setIsSaving(true);
     setError(null);
 
     try {
       const derivedTitle = deriveTitleFromContent(title, sourceUrl, sourceText, sourceFile);
-      const combinedSourceText =
-        sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
-
-      const savedStudySet = await saveStudySet({
-        sourceText: combinedSourceText,
-        sourceType,
-        sourceFileName: sourceFile?.name,
-        ...result,
-        title: derivedTitle
-      });
-
+      const combinedSourceText = sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
+      const savedStudySet = await saveStudySet({ sourceText: combinedSourceText, sourceType, sourceFileName: sourceFile?.name, ...result, title: derivedTitle });
       navigate(`/study-sets/${savedStudySet.id}`);
     } catch (saveError) {
       setError(toUserFacingGenerationError(saveError instanceof Error ? saveError.message : "Could not save the study set."));
@@ -528,26 +320,14 @@ export function CreateStudySetPage() {
 
     try {
       const derivedTitle = deriveTitleFromContent(title, sourceUrl, sourceText, sourceFile);
-      const combinedSourceText =
-        sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
+      const combinedSourceText = sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
 
-      if (!derivedTitle) {
-        throw new Error("Add a title, link, text, or PDF before generating.");
-      }
-
-      if (sourceType === "text" && !sourceText.trim() && sourceUrl.trim()) {
-        throw new Error("Link-only generation is not supported yet. Paste the transcript or page text along with the link.");
-      }
-
-      if (sourceType === "text" && !combinedSourceText.trim()) {
-        throw new Error("Add a link or paste text before generating.");
-      }
+      if (!derivedTitle) throw new Error("Add a title, link, text, or PDF before generating.");
+      if (sourceType === "text" && !sourceText.trim() && sourceUrl.trim()) throw new Error("Link-only generation is not supported yet. Paste the transcript or page text along with the link.");
+      if (sourceType === "text" && !combinedSourceText.trim()) throw new Error("Add a link or paste text before generating.");
 
       if (sourceType === "pdf") {
-        if (!sourceFile) {
-          throw new Error("Choose a PDF file before generating.");
-        }
-
+        if (!sourceFile) throw new Error("Choose a PDF file before generating.");
         lastPdfTitleRef.current = derivedTitle;
         const created = await createPdfStudyJob({ title: derivedTitle }, sourceFile);
         setTitle(derivedTitle);
@@ -555,34 +335,21 @@ export function CreateStudySetPage() {
         setIsSocketFallbackPolling(false);
         setResult(null);
         storeActiveJobId(created.job.id);
-
         if (created.job.status === "completed" && created.job.studySetId) {
           storeActiveJobId(null);
           navigate(`/study-sets/${created.job.studySetId}`);
           return;
         }
-
         subscribeToActiveJob(created.job.id);
       } else {
-        lastTextPayloadRef.current = {
-          title: derivedTitle,
-          sourceText: combinedSourceText
-        };
-        const created = await createTextStudyJob({
-          title: derivedTitle,
-          sourceText: combinedSourceText
-        });
+        lastTextPayloadRef.current = { title: derivedTitle, sourceText: combinedSourceText };
+        const created = await createTextStudyJob({ title: derivedTitle, sourceText: combinedSourceText });
         setTitle(derivedTitle);
         setResult(null);
         setActiveJob(created.job);
         setIsSocketFallbackPolling(false);
         storeActiveJobId(created.job.id);
-
-        if (created.job.status === "completed" && created.job.generatedStudySet) {
-          handleTextJobCompletion(created.job);
-          return;
-        }
-
+        if (created.job.status === "completed" && created.job.generatedStudySet) return handleTextJobCompletion(created.job);
         subscribeToActiveJob(created.job.id);
       }
     } catch (submitError) {
@@ -592,426 +359,229 @@ export function CreateStudySetPage() {
     }
   }
 
-  const jobStageText = activeJob?.stage ? (JOB_STAGE_LABELS[activeJob.stage] ?? activeJob.stage) : "Queued";
-  const jobStatusLabel = activeJob
-    ? `${jobStageText}${typeof activeJob.progressPercent === "number" ? ` • ${activeJob.progressPercent}%` : ""}`
-    : null;
-  const canRetryGeneration =
-    !isSubmitting &&
-    ((sourceType === "text" && lastTextPayloadRef.current !== null) || (sourceType === "pdf" && sourceFile !== null && lastPdfTitleRef.current));
-  const hasSourceUrl = sourceUrl.trim().length > 0;
-  const hasSourceText = sourceText.trim().length > 0;
-  const isGeneratingPreview = isSubmitting || Boolean(activeJob && !isStudyJobTerminal(activeJob));
-  const previewJobSourceType = activeJob?.sourceType ?? sourceType;
-  const currentStep = resultPreview ? 4 : isGeneratingPreview ? 3 : hasSourceText || hasSourceUrl || sourceFile ? 3 : 2;
-
   return (
-    <section className="page-grid">
-      <form className="panel form-panel" onSubmit={handleSubmit}>
-        <div className="create-steps-row" aria-label="Create study set steps">
-          {[1, 2, 3, 4].map((step) => (
-            <span className={step <= currentStep ? "create-step-chip is-active" : "create-step-chip"} key={step}>
-              Step {step}
-            </span>
-          ))}
-        </div>
-
-        <div className="field">
-          <div className="field-heading">
-            <span className="field-step">Step 1</span>
-            <label>Choose your input</label>
-            <p className="field-helper">Start from pasted notes or upload a PDF and the app will shape the rest around it.</p>
-          </div>
-          <div className="source-option-grid">
-            <button
-              className={sourceType === "text" ? "source-option-card active" : "source-option-card"}
-              type="button"
-              onClick={() => setSourceType("text")}
-            >
-              {sourceType === "text" ? <span className="source-option-check" aria-hidden="true">✓</span> : null}
-              <span className="source-option-icon">Paste</span>
-              <span className="source-option-title">Paste</span>
-              <span className="source-option-description">YouTube transcript, website text, class notes</span>
-            </button>
-            <button
-              className={sourceType === "pdf" ? "source-option-card active" : "source-option-card"}
-              type="button"
-              onClick={() => {
-                setSourceType("pdf");
-                setIsPdfModalOpen(true);
-              }}
-            >
-              {sourceType === "pdf" ? <span className="source-option-check" aria-hidden="true">✓</span> : null}
-              <span className="source-option-icon">PDF</span>
-              <span className="source-option-title">Upload PDF</span>
-              <span className="source-option-description">Lecture slides, handouts, textbook sections</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="field">
-          <div className="field-heading">
-            <span className="field-step">Step 2</span>
-            <label htmlFor="title">{sourceType === "pdf" ? "PDF Title" : "Study Set Title"}</label>
-            <p className="field-helper">Use a clear title so the study set is easy to find later in your library.</p>
-          </div>
-          <input
-            id="title"
-            value={title}
-            placeholder={starterTitle}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </div>
-
-        {sourceType === "text" ? (
-          <div className="field">
-            <div className="field-heading">
-              <span className="field-step">Step 2</span>
-              <label htmlFor="sourceTextInline">Add content</label>
-              <p className="field-helper">Paste the actual notes, transcript, or article text you want turned into a study pack.</p>
-            </div>
-            <div className="field">
-              <label htmlFor="sourceUrl">Optional source link</label>
-              <input
-                id="sourceUrl"
-                placeholder="https://youtube.com/watch?v=... or website URL"
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-              />
-            </div>
-            <div className="source-chip-list">
-              {hasSourceUrl ? <span className="source-chip">Link attached</span> : null}
-              {hasSourceText ? <span className="source-chip">{sourceText.length} characters ready</span> : null}
-              {!hasSourceUrl && !hasSourceText ? <span className="source-chip is-muted">No source added yet</span> : null}
-            </div>
-            <div className="field">
-              <label htmlFor="sourceTextInline">Pasted notes or transcript</label>
-              <textarea
-                className="create-inline-textarea"
-                id="sourceTextInline"
-                rows={10}
-                value={sourceText}
-                placeholder={starterText}
-                onChange={(event) => setSourceText(event.target.value)}
-              />
-              <div className="content-live-meta">
-                <p className="muted small-copy">
-                  {hasSourceText
-                    ? "Text ready for generation."
-                    : "Paste lecture notes, a transcript, or article text to generate a summary, flashcards, and practice."}
-                </p>
-                <p className="content-counter">{sourceText.length}/50000</p>
+    <section className="relative px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-8">
+        <Reveal className="space-y-8 hidden lg:block">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.85fr)] xl:items-end">
+            <div className="space-y-6">
+              <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-100" variant="outline">Build a study pack</Badge>
+              <div className="space-y-4">
+                <h1 className="max-w-4xl font-[family-name:var(--font-display)] text-5xl leading-[0.95] text-white sm:text-6xl">Create a study experience that feels premium before it even saves.</h1>
+                <p className="max-w-3xl text-lg leading-8 text-zinc-300">Bring in the raw material, shape the title, and let Study Sphere assemble a cleaner guide, stronger recall, and a preview surface that users can trust before they save.</p>
               </div>
             </div>
-            <div className="inline-action-row">
-              <button className="secondary-button compact-button" type="button" onClick={loadStarterExample}>
-                Use Example
-              </button>
-              {(hasSourceUrl || hasSourceText) ? (
-                <button className="secondary-button compact-button" type="button" onClick={resetTextInputs}>
-                  Clear
-                </button>
-              ) : null}
-            </div>
-            {hasSourceUrl && !hasSourceText ? (
-              <p className="error-text content-warning">
-                A link alone is only stored as a reference. Paste the actual transcript or page text before generating.
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="field">
-            <div className="field-heading">
-              <span className="field-step">Step 2</span>
-              <label htmlFor="sourceFile">PDF Document</label>
-              <p className="field-helper">Open the uploader, choose your PDF, then generate a study pack from the extracted content.</p>
-            </div>
-            <input
-              className="pdf-file-input"
-              id="sourceFile"
-              ref={pdfInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={(event) => {
-                const selectedFile = event.target.files?.[0] ?? null;
-                setSourceFile(selectedFile);
-              }}
-            />
-            <div className="content-preview pdf-summary-preview">
-              <p className="muted small-copy">
-                {sourceFile ? `PDF title: ${formatPdfTitle(sourceFile.name)}` : "No PDF uploaded yet."}
-              </p>
-              <p className="muted small-copy">
-                {sourceFile ? "PDF uploaded and ready for generation." : "Open the uploader to choose a PDF for this study set."}
-              </p>
-              {sourceFile ? (
-                <div className="inline-action-row">
-                  <button
-                    className="secondary-button compact-button"
-                    type="button"
-                    onClick={() => setIsPdfModalOpen(true)}
-                    ref={pdfTriggerRef}
-                  >
-                    Change PDF
-                  </button>
-                  <button className="secondary-button compact-button" type="button" onClick={clearPdfSelection}>
-                    Remove PDF
-                  </button>
+            <Card className="rounded-[1.9rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,181,111,0.06))] shadow-[0_28px_90px_rgba(0,0,0,0.2)]">
+              <CardContent className="space-y-5 p-6">
+                <div className="flex items-start gap-4">
+                  <span className="inline-flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-amber-200"><Stars className="size-5" /></span>
+                  <div className="space-y-2">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Designed for confidence</p>
+                    <p className="text-sm leading-7 text-zinc-300">The create flow should feel like a controlled studio: minimal friction up front, clear progress in the middle, and a convincing preview before anything reaches the library.</p>
+                  </div>
                 </div>
-              ) : null}
-            </div>
+                <div className="flex flex-wrap gap-2">
+                  {PREVIEW_HIGHLIGHTS.map((highlight) => (
+                    <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" key={highlight} variant="outline">{highlight}</Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        )}
+          <div className="grid gap-4 sm:grid-cols-3">
+            {CREATE_SURFACE_CARDS.map((card, index) => (
+              <Reveal delay={0.06 + index * 0.07} key={card.title}>
+                <Card className="h-full rounded-[1.6rem] border border-white/10 bg-white/[0.04] shadow-[0_18px_55px_rgba(0,0,0,0.18)]"><CardContent className="space-y-3 p-5"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.26em] text-zinc-500">{card.title}</p><p className="text-sm leading-7 text-zinc-400">{card.copy}</p></CardContent></Card>
+              </Reveal>
+            ))}
+          </div>
+        </Reveal>
 
-        <div className="field">
-          <div className="field-heading">
-            <span className="field-step">Step 3</span>
-            <label>Generate</label>
-            <p className="field-helper">Build the study pack and then review the generated summary, flashcards, and practice output.</p>
-          </div>
-          <button className="primary-button" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? (sourceType === "pdf" ? "Uploading..." : "Generating...") : "Generate Study Pack"}
-          </button>
+        <Reveal className="lg:hidden">
+          <Card className="rounded-[1.8rem] border border-white/10 bg-[linear-gradient(135deg,rgba(14,18,28,0.96),rgba(10,12,22,0.92))] shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
+            <CardContent className="space-y-5 p-5">
+              <div className="space-y-3">
+                <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-100" variant="outline">
+                  Build a study pack
+                </Badge>
+                <h1 className="font-[family-name:var(--font-display)] text-[2.35rem] leading-[0.94] text-white">
+                  Create faster on mobile.
+                </h1>
+                <p className="text-sm leading-7 text-zinc-300">
+                  Choose the source, add the essentials, and preview the result without wading through extra framing.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                  {sourceType === "pdf" ? "PDF flow" : "Paste flow"}
+                </Badge>
+                <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                  Step {currentStep} of 4
+                </Badge>
+                {jobStatusLabel ? (
+                  <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                    {jobStatusLabel}
+                  </Badge>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        </Reveal>
+
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,0.94fr)_minmax(380px,0.86fr)]">
+          {showMobilePreviewFirst ? (
+            <div className="lg:hidden">
+              <Reveal>
+                <CreateStudySetPreview
+                  isGeneratingPreview={isGeneratingPreview}
+                  isRestoringJob={isRestoringJob}
+                  isSaving={isSaving}
+                  onSave={() => void handleSave()}
+                  previewJobSourceType={previewJobSourceType}
+                  progressValue={progressValue}
+                  resultPreview={resultPreview}
+                />
+              </Reveal>
+            </div>
+          ) : null}
+
+          <Reveal>
+            <form aria-busy={isGeneratingPreview || isSaving} className="space-y-6" onSubmit={handleSubmit}>
+              <Card className="rounded-[2rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+                <CardContent className="space-y-8 p-6 sm:p-8">
+                  <div className="hidden flex-wrap gap-2 sm:flex">{[1, 2, 3, 4].map((step) => <Badge className={cn("rounded-full border px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em]", step <= currentStep ? "border-amber-200/30 bg-amber-200/12 text-amber-100" : "border-white/10 bg-white/[0.04] text-zinc-500")} key={step} variant="outline">Step {step}</Badge>)}</div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Step 1</p>
+                      <h2 className="font-[family-name:var(--font-display)] text-3xl leading-tight text-white sm:text-4xl">Choose how the study pack begins.</h2>
+                      <p className="hidden text-sm leading-7 text-zinc-400 sm:block">Start from pasted notes or from a PDF. The app keeps the rest of the experience consistent either way.</p>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <CreateSourceOptionCard active={sourceType === "text"} description="YouTube transcripts, website text, class notes, or any long-form material you can paste directly." icon={TextQuote} label="Paste" onClick={() => setSourceType("text")} title="Paste text" />
+                      <CreateSourceOptionCard active={sourceType === "pdf"} description="Lecture slides, handouts, and textbook sections that should be turned into a study pack." icon={UploadCloud} label="PDF" onClick={() => { setSourceType("pdf"); setIsPdfModalOpen(true); }} title="Upload PDF" />
+                    </div>
+                  </div>
+
+                  <Separator className="bg-white/8" />
+
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Step 2</p>
+                      <Label className="text-sm font-medium text-zinc-200" htmlFor="title">{sourceType === "pdf" ? "PDF title" : "Study set title"}</Label>
+                      <p className="text-sm leading-7 text-zinc-400">Give the pack a clear title so it feels easy to reopen later from the library.</p>
+                    </div>
+                    <Input className="h-12 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-base text-white placeholder:text-zinc-500 focus-visible:border-amber-200/50 focus-visible:ring-amber-200/20" id="title" onChange={(event) => setTitle(event.target.value)} placeholder={starterTitle} value={title} />
+                  </div>
+
+                  {sourceType === "text" ? (
+                    <div className="space-y-5">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-zinc-200" htmlFor="sourceUrl">Optional source link</Label>
+                        <Input className="h-12 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-base text-white placeholder:text-zinc-500 focus-visible:border-amber-200/50 focus-visible:ring-amber-200/20" id="sourceUrl" onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://youtube.com/watch?v=... or website URL" value={sourceUrl} />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {hasSourceUrl ? <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline"><Link2 className="mr-1 size-3.5" />Link attached</Badge> : null}
+                        {hasSourceText ? <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline"><FileText className="mr-1 size-3.5" />{sourceText.length} characters ready</Badge> : null}
+                        {!hasSourceUrl && !hasSourceText ? <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-500" variant="outline">No source added yet</Badge> : null}
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium text-zinc-200" htmlFor="sourceTextInline">Pasted notes or transcript</Label>
+                        <Textarea
+                          aria-describedby={`${sourceTextHelpId} ${sourceTextCountId}`}
+                          className="min-h-[220px] rounded-[1.7rem] border-white/10 bg-white/[0.04] px-4 py-4 text-base leading-7 text-white placeholder:text-zinc-500 focus-visible:border-amber-200/50 focus-visible:ring-amber-200/20 sm:min-h-[300px]"
+                          id="sourceTextInline"
+                          onChange={(event) => setSourceText(event.target.value)}
+                          placeholder={starterText}
+                          rows={12}
+                          value={sourceText}
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                          <p className="leading-7 text-zinc-400" id={sourceTextHelpId}>
+                            {hasSourceText ? "Text is ready for generation." : "Paste lecture notes, a transcript, or article text to generate the pack."}
+                          </p>
+                          <span className="font-medium text-zinc-500" id={sourceTextCountId}>
+                            {sourceText.length}/50000
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <Button className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]" onClick={loadStarterExample} type="button" variant="ghost">Use Example</Button>
+                        {(hasSourceUrl || hasSourceText) ? <Button className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]" onClick={resetTextInputs} type="button" variant="ghost">Clear</Button> : null}
+                      </div>
+                      {hasSourceUrl && !hasSourceText ? (
+                        <div className="rounded-[1.4rem] border border-amber-200/18 bg-amber-200/10 px-4 py-4 text-sm leading-7 text-amber-100" role="alert">
+                          A link alone is only stored as a reference. Paste the actual transcript or page text before generating.
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="space-y-2">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Step 2</p>
+                        <h3 className="text-xl font-semibold text-white">PDF source</h3>
+                        <p className="hidden text-sm leading-7 text-zinc-400 sm:block">Choose the document, confirm the title, and let the worker extract the content in the background.</p>
+                      </div>
+                      <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="space-y-1"><p className="text-sm font-semibold text-white">{sourceFile ? formatPdfTitle(sourceFile.name) : "No PDF uploaded yet"}</p><p className="text-sm leading-7 text-zinc-400">{sourceFile ? "This document is ready for extraction and generation." : "Open the selector to choose the PDF you want to turn into a study pack."}</p></div>
+                          <div className="flex flex-wrap gap-3">
+                            <Button className="h-11 rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_36%,#bc7cff_100%)] px-5 text-sm font-semibold text-slate-950 shadow-[0_18px_42px_rgba(240,141,99,0.24)] hover:opacity-95" onClick={() => setIsPdfModalOpen(true)} type="button">{sourceFile ? "Change PDF" : "Select PDF"}</Button>
+                            {sourceFile ? <Button className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]" onClick={clearPdfSelection} type="button" variant="ghost">Remove</Button> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <Separator className="bg-white/8" />
+
+                  <div className="space-y-4">
+                    <div className="space-y-2"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Step 3</p><h3 className="text-xl font-semibold text-white">Generate the pack</h3><p className="hidden text-sm leading-7 text-zinc-400 sm:block">Build the study pack and send the preview surface into the panel on the right.</p></div>
+                    <Button className="h-12 w-full rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_36%,#bc7cff_100%)] text-sm font-semibold text-slate-950 shadow-[0_22px_48px_rgba(240,141,99,0.28)] hover:opacity-95" disabled={isSubmitting} type="submit">{isSubmitting ? (sourceType === "pdf" ? "Uploading..." : "Generating...") : "Generate Study Pack"}<ArrowRight className="size-4" /></Button>
+                  </div>
+
+                  <input accept="application/pdf,.pdf" className="hidden" id="sourceFile" ref={pdfInputRef} type="file" onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} />
+
+                  {activeJob && !isStudyJobTerminal(activeJob) ? (
+                    <div aria-atomic="true" aria-live="polite" className="space-y-4 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5" role="status">
+                      <div className="flex flex-wrap items-center justify-between gap-3"><div className="space-y-1"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">{activeJob.sourceType === "pdf" ? "PDF Processing Status" : "Study Pack Status"}</p><p className="text-lg font-semibold text-white">{jobStatusLabel}</p></div><Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">{isSocketFallbackPolling ? "Polling fallback" : "Live updates"}</Badge></div>
+                      <Progress className="h-2 bg-white/8 [&_[data-slot=progress-indicator]]:bg-[linear-gradient(90deg,#ffb56f,#f08d63,#bc7cff)]" value={progressValue} />
+                      <div className="space-y-2 text-sm leading-7 text-zinc-400"><p>{isSocketFallbackPolling ? "Connection dropped for a moment. We’re polling in the background and will resync automatically." : activeJob.cacheHit ? "Cache hit detected. Your result should be ready almost instantly." : activeJob.sourceType === "pdf" ? "Your PDF is processing in the background." : "Your study pack is being generated in the background."}</p><p>You can leave this page. The app will reconnect to the job when you come back.</p></div>
+                    </div>
+                  ) : null}
+
+                  {error ? <div className="space-y-4 rounded-[1.5rem] border border-rose-300/20 bg-rose-300/10 p-5" id={generationErrorId} role="alert"><p className="text-sm leading-7 text-rose-100">{error}</p><div className="flex flex-wrap gap-3">{canRetryGeneration ? <Button className="h-10 rounded-full border border-white/10 bg-white/[0.08] px-5 text-zinc-100 hover:bg-white/[0.12]" onClick={() => void retryLastGeneration()} type="button" variant="ghost">Retry Generation</Button> : null}{activeJob ? <Button className="h-10 rounded-full border border-white/10 bg-white/[0.08] px-5 text-zinc-100 hover:bg-white/[0.12]" onClick={clearJobState} type="button" variant="ghost">Clear Status</Button> : null}</div></div> : null}
+                </CardContent>
+              </Card>
+            </form>
+          </Reveal>
+
+          <Reveal delay={0.08} className="hidden lg:block">
+            <CreateStudySetPreview isGeneratingPreview={isGeneratingPreview} isRestoringJob={isRestoringJob} isSaving={isSaving} onSave={() => void handleSave()} previewJobSourceType={previewJobSourceType} progressValue={progressValue} resultPreview={resultPreview} />
+          </Reveal>
         </div>
+      </div>
 
-        {activeJob && !isStudyJobTerminal(activeJob) ? (
-          <div className="job-status-card">
-            <p className="flashcard-label">{activeJob.sourceType === "pdf" ? "PDF Processing Status" : "Study Pack Status"}</p>
-            <p>{jobStatusLabel}</p>
-            <p className="muted small-copy">
-              {isSocketFallbackPolling
-                ? "Connection dropped for a moment. We’re polling in the background and will resync automatically."
-                : activeJob.cacheHit
-                ? "Cache hit detected. Your result should be ready almost instantly."
-                : activeJob.sourceType === "pdf"
-                  ? "Your PDF is processing in the background."
-                  : "Your study pack is being generated in the background."}
-            </p>
-            <p className="muted small-copy">You can leave this page. The app will reconnect to the job when you come back.</p>
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="inline-feedback-block">
-            <p className="error-text">{error}</p>
-            <div className="state-panel-actions">
-              {canRetryGeneration ? (
-                <button className="secondary-button compact-button" onClick={() => void retryLastGeneration()} type="button">
-                  Retry Generation
-                </button>
-              ) : null}
-              {activeJob ? (
-                <button className="secondary-button compact-button" onClick={clearJobState} type="button">
-                  Clear Status
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </form>
-
-      <article className="panel result-panel">
-          <div className="field-heading result-panel-heading">
-            <span className="field-step">Step 4</span>
-            <label>Review output</label>
-            <p className="field-helper">Your study materials appear here as soon as generation starts and fill in as the job finishes.</p>
-          </div>
-          <h2>Generated Output</h2>
-          {isRestoringJob ? (
-            <div className="job-preview">
-              <div className="job-preview-badge">Reconnecting</div>
-              <h3>Restoring your active study job.</h3>
-              <p className="job-preview-copy">We’re reconnecting to the last job you started so you can keep going without losing progress.</p>
-              <div className="job-preview-progress" aria-hidden="true">
-                <span className="job-preview-progress-bar" />
-              </div>
-              <div className="result-skeleton-grid">
-                {OUTPUT_PREVIEW_SECTIONS.map((section) => (
-                  <section className="result-skeleton-card" key={section.title}>
-                    <p className="flashcard-label">{section.title}</p>
-                    <div className="skeleton-line loading-card-title-line" />
-                    <div className="skeleton-line" />
-                    <div className="skeleton-line loading-subtle-line" />
-                  </section>
-                ))}
-              </div>
-            </div>
-          ) : isGeneratingPreview ? (
-            <div className="job-preview">
-              <div className="job-preview-badge">{previewJobSourceType === "pdf" ? "Processing PDF" : "Generating Preview"}</div>
-              <h3>Your study set is being prepared.</h3>
-              <p className="job-preview-copy">
-                {previewJobSourceType === "pdf"
-                  ? "You can stay here or leave this page. We&apos;ll reconnect to the job and open the study set as soon as it&apos;s ready."
-                  : "You can stay here or leave this page. We&apos;ll reconnect to the job and bring the generated preview back when it finishes."}
-              </p>
-              <div className="job-preview-progress" aria-hidden="true">
-                <span className="job-preview-progress-bar" />
-              </div>
-              <div className="result-skeleton-grid">
-                {OUTPUT_PREVIEW_SECTIONS.map((section) => (
-                  <section className="result-skeleton-card" key={section.title}>
-                    <p className="flashcard-label">{section.title}</p>
-                    <div className="skeleton-line loading-card-title-line" />
-                    <div className="skeleton-line" />
-                    <div className="skeleton-line loading-subtle-line" />
-                  </section>
-                ))}
-              </div>
-            </div>
-          ) : !resultPreview ? (
-            <div className="result-placeholder-stack">
-              {OUTPUT_PREVIEW_SECTIONS.map((section) => (
-                <section className="result-placeholder-card" key={section.title}>
-                  <p className="flashcard-label">{section.title}</p>
-                  <h3>{section.headline}</h3>
-                  <p className="result-placeholder-copy">{section.copy}</p>
-                </section>
-              ))}
-            </div>
-        ) : (
-          <>
-            <section className="result-block">
-              <h3>Summary</h3>
-              <p>{resultPreview.summary}</p>
-            </section>
-
-            <section className="result-block">
-              <h3>Study Guide</h3>
-              <StudyGuideRenderer content={resultPreview.studyGuide} />
-            </section>
-
-            <section className="result-block">
-              <h3>Key Concepts</h3>
-              <div className="chip-row">
-                {resultPreview.keyConcepts.map((concept) => (
-                  <span className="chip" key={concept}>
-                    {concept}
-                  </span>
-                ))}
-              </div>
-            </section>
-
-            <section className="result-block">
-              <h3>Flashcards</h3>
-              <div className="preview-flashcard-list">
-                {resultPreview.flashcards.map((card) => (
-                  <article className="preview-flashcard" key={`${card.order}-${card.question}`}>
-                    <p className="preview-flashcard-label">Question</p>
-                    <p className="preview-flashcard-copy">{card.question}</p>
-                    <p className="preview-flashcard-label">Answer</p>
-                    <p className="preview-flashcard-copy">{card.answer}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <button className="primary-button" type="button" onClick={() => void handleSave()} disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save Study Set"}
+      <Dialog onOpenChange={setIsPdfModalOpen} open={sourceType === "pdf" && isPdfModalOpen}>
+        <DialogContent className="rounded-[1.9rem] border-white/10 bg-[#0d111b]/96 text-white shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:max-w-lg">
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="font-[family-name:var(--font-display)] text-3xl text-white">Upload your PDF</DialogTitle>
+            <DialogDescription className="text-base leading-7 text-zinc-400">We’ll turn the document into a saved study pack with guides, flashcards, and exam-ready practice.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <button className="flex w-full flex-col items-center justify-center gap-3 rounded-[1.7rem] border border-dashed border-white/14 bg-white/[0.04] px-6 py-10 text-center transition hover:border-white/20 hover:bg-white/[0.06]" onClick={() => pdfInputRef.current?.click()} type="button">
+              <span className="inline-flex size-14 items-center justify-center rounded-3xl border border-white/10 bg-white/[0.06] text-amber-200"><UploadCloud className="size-6" /></span>
+              <div className="space-y-2"><p className="text-lg font-semibold text-white">{sourceFile ? "Choose a different PDF" : "Click to choose your PDF"}</p><p className="text-sm leading-7 text-zinc-400">{sourceFile ? sourceFile.name : "Lecture notes, handouts, and textbook sections up to 10 MB."}</p></div>
             </button>
-          </>
-        )}
-      </article>
-
-      {sourceType === "text" && isPasteModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsPasteModalOpen(false)}>
-          <div
-            aria-modal="true"
-            className="content-modal"
-            role="dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="content-modal-header">
-              <div>
-                <h2>Add Content</h2>
-                <p className="muted">Enter a URL or paste text to create your study set.</p>
-              </div>
-              <button className="modal-close" type="button" onClick={() => setIsPasteModalOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            <div className="field">
-              <label htmlFor="sourceUrl">Enter a YouTube or website URL</label>
-              <input
-                id="sourceUrl"
-                placeholder="https://youtube.com/watch?v=..."
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-              />
-              <p className="muted small-copy">
-                The link is saved as a reference. For accurate study generation, also paste the transcript or page text below.
-              </p>
-            </div>
-
-            <div className="content-modal-divider">
-              <span>or</span>
-            </div>
-
-            <div className="field">
-              <label htmlFor="sourceText">Copy and paste text to add as content</label>
-              <textarea
-                id="sourceText"
-                ref={pasteTextareaRef}
-                rows={10}
-                value={sourceText}
-                placeholder={starterText}
-                onChange={(event) => setSourceText(event.target.value)}
-              />
-              <p className="content-counter">{sourceText.length}/50000</p>
-            </div>
-
-            <div className="content-modal-actions">
-              <button className="primary-button" type="button" onClick={() => setIsPasteModalOpen(false)}>
-                Done
-              </button>
-            </div>
+            {sourceFile ? <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Ready</p><p className="mt-2 text-sm font-semibold text-white">PDF title: {formatPdfTitle(sourceFile.name)}</p><p className="mt-1 text-sm leading-7 text-zinc-400">This document is uploaded and ready for generation.</p></div> : null}
           </div>
-        </div>
-      ) : null}
-
-      {sourceType === "pdf" && isPdfModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsPdfModalOpen(false)}>
-          <div
-            aria-modal="true"
-            className="content-modal pdf-upload-modal"
-            role="dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="content-modal-header">
-              <div>
-                <h2>Please upload your PDF</h2>
-                <p className="muted">We&apos;ll turn your document into a saved study pack with guides, flashcards, and exam practice.</p>
-              </div>
-              <button className="modal-close" type="button" onClick={() => setIsPdfModalOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            <button className="pdf-upload-dropzone" type="button" onClick={openPdfPicker}>
-              <span className="pdf-upload-icon" aria-hidden="true">
-                Upload
-              </span>
-              <strong>{sourceFile ? "Choose a different PDF" : "Click to upload your PDF"}</strong>
-              <span>{sourceFile ? sourceFile.name : "Lecture notes, handouts, and textbook sections up to 10 MB."}</span>
-            </button>
-
-            {sourceFile ? (
-              <div className="pdf-upload-status">
-                <p className="flashcard-label">Ready</p>
-                <p>PDF title: {formatPdfTitle(sourceFile.name)}</p>
-                <p className="muted small-copy">PDF uploaded and ready for generation.</p>
-              </div>
-            ) : null}
-
-            <div className="content-modal-actions">
-              <button className="primary-button" type="button" onClick={applyPdfSelection} disabled={!sourceFile}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+          <DialogFooter className="border-t-0 bg-transparent p-0 pt-2 sm:justify-between">
+            <Button className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]" onClick={() => setIsPdfModalOpen(false)} type="button" variant="ghost">Cancel</Button>
+            <Button className="h-11 rounded-full bg-[linear-gradient(135deg,#ffb56f_0%,#f08d63_36%,#bc7cff_100%)] px-5 text-sm font-semibold text-slate-950 shadow-[0_18px_42px_rgba(240,141,99,0.24)] hover:opacity-95" disabled={!sourceFile} onClick={applyPdfSelection} type="button">Use This PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
