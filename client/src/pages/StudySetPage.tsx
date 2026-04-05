@@ -225,7 +225,7 @@ function MobileFlashcardTrainer({
   }
 
   return (
-    <Card className="min-w-0 overflow-hidden rounded-[1.7rem] border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
+    <Card className="min-w-0 overflow-hidden rounded-[1.7rem] border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] shadow-none">
       <CardContent className="space-y-5 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
@@ -979,8 +979,7 @@ export function StudySetPage() {
 
               <TabsContent className="space-y-4" value="flashcards">
             <Reveal delay={0.05}>
-              <Card className="min-w-0 rounded-[1.7rem] border-white/10 bg-[linear-gradient(180deg,rgba(14,18,28,0.98),rgba(9,11,18,0.98))] shadow-[0_20px_60px_rgba(0,0,0,0.2)]">
-                <CardContent className="min-w-0 space-y-5 p-5">
+              <div className="min-w-0 space-y-5 px-1 pb-1">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-2">
                       <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-100">
@@ -1002,53 +1001,48 @@ export function StudySetPage() {
                     <div className="space-y-4">
                       <MobileFlashcardTrainer cards={flashcards} studySetId={studySet.id} />
 
-                      <Card className="rounded-[1.4rem] border-white/8 bg-white/[0.03] shadow-none">
-                        <CardContent className="min-w-0 space-y-4 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <h3 className="font-[family-name:var(--font-display)] text-2xl text-white">Loaded cards</h3>
-                            <span className="text-sm text-zinc-500">Tap to flip</span>
-                          </div>
-                          <div className="grid gap-4">
-                            {mobileVisibleFlashcards.map((card, index) => (
-                              <MobileFlashcardListItem card={card} index={index} key={card.id} />
-                            ))}
-                          </div>
-                          {flashcards.length > 2 ? (
-                            <Button
-                              className="h-11 w-full rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
-                              onClick={() => setIsMobileDeckExpanded((current) => !current)}
-                              type="button"
-                              variant="ghost"
-                            >
-                              {isMobileDeckExpanded ? "Show Fewer Cards" : `Show All ${flashcards.length} Loaded Cards`}
-                            </Button>
-                          ) : null}
-                          {hasMoreFlashcards ? (
-                            <Button
-                              className="h-11 w-full rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
-                              disabled={isLoadingMoreFlashcards}
-                              onClick={() => void handleLoadMoreFlashcards()}
-                              type="button"
-                              variant="ghost"
-                            >
-                              {isLoadingMoreFlashcards ? "Loading more flashcards..." : "Load More Flashcards"}
-                            </Button>
-                          ) : null}
-                        </CardContent>
-                      </Card>
+                      <div className="min-w-0 space-y-4 rounded-[1.45rem] bg-white/[0.02] p-2">
+                        <div className="flex items-center justify-between gap-3 px-2">
+                          <h3 className="font-[family-name:var(--font-display)] text-2xl text-white">Loaded cards</h3>
+                          <span className="text-sm text-zinc-500">Tap to flip</span>
+                        </div>
+                        <div className="grid gap-4">
+                          {mobileVisibleFlashcards.map((card, index) => (
+                            <MobileFlashcardListItem card={card} index={index} key={card.id} />
+                          ))}
+                        </div>
+                        {flashcards.length > 2 ? (
+                          <Button
+                            className="h-11 w-full rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
+                            onClick={() => setIsMobileDeckExpanded((current) => !current)}
+                            type="button"
+                            variant="ghost"
+                          >
+                            {isMobileDeckExpanded ? "Show Fewer Cards" : `Show All ${flashcards.length} Loaded Cards`}
+                          </Button>
+                        ) : null}
+                        {hasMoreFlashcards ? (
+                          <Button
+                            className="h-11 w-full rounded-full border border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/[0.08]"
+                            disabled={isLoadingMoreFlashcards}
+                            onClick={() => void handleLoadMoreFlashcards()}
+                            type="button"
+                            variant="ghost"
+                          >
+                            {isLoadingMoreFlashcards ? "Loading more flashcards..." : "Load More Flashcards"}
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   ) : (
-                    <Card className="rounded-[1.4rem] border-white/8 bg-white/[0.03] shadow-none">
-                      <CardContent className="space-y-3 p-4">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Deck incoming</p>
-                        <p className="text-sm leading-7 text-zinc-400">
-                          Flashcards will appear here once the live study-set details finish loading.
-                        </p>
-                      </CardContent>
-                    </Card>
+                    <div className="rounded-[1.4rem] border border-white/8 bg-white/[0.03] px-4 py-4">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Deck incoming</p>
+                      <p className="mt-3 text-sm leading-7 text-zinc-400">
+                        Flashcards will appear here once the live study-set details finish loading.
+                      </p>
+                    </div>
                   )}
-                </CardContent>
-              </Card>
+              </div>
             </Reveal>
               </TabsContent>
             </CardContent>

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { LoaderCircle } from "lucide-react";
 
 import { StudyGuideRenderer } from "@/components/StudyGuideRenderer";
@@ -31,6 +33,15 @@ type CreateStudySetPreviewProps = {
   resultPreview: PreviewState;
 };
 
+const PREVIEW_TAB_ITEMS = [
+  { label: "Summary", value: "summary" },
+  { label: "Guide", value: "guide" },
+  { label: "Concepts", value: "concepts" },
+  { label: "Flashcards", value: "flashcards" }
+] as const;
+
+type PreviewTabValue = (typeof PREVIEW_TAB_ITEMS)[number]["value"];
+
 function PreviewSkeleton({ badgeLabel, copy, title }: { badgeLabel: string; title: string; copy: string }) {
   return (
     <div className="space-y-5 rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-5">
@@ -59,16 +70,34 @@ export function CreateStudySetPreview({
   progressValue,
   resultPreview
 }: CreateStudySetPreviewProps) {
+  const [mobileTab, setMobileTab] = useState<PreviewTabValue>("summary");
+  const [visibleFlashcardsCount, setVisibleFlashcardsCount] = useState(2);
+
+  useEffect(() => {
+    setVisibleFlashcardsCount(2);
+  }, [resultPreview?.flashcards.length]);
+
+  const visibleFlashcards = resultPreview ? resultPreview.flashcards.slice(0, visibleFlashcardsCount) : [];
+  const hasMoreFlashcards = resultPreview ? visibleFlashcardsCount < resultPreview.flashcards.length : false;
+
+  function loadMoreFlashcards() {
+    if (!resultPreview) {
+      return;
+    }
+
+    setVisibleFlashcardsCount((current) => Math.min(current + 2, resultPreview.flashcards.length));
+  }
+
   return (
     <div className="xl:sticky xl:top-28">
-      <Card className="rounded-[1.8rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:rounded-[2rem]">
-        <CardContent className="space-y-6 p-6 sm:p-8">
+      <Card className="overflow-hidden rounded-[1.8rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:rounded-[2rem]">
+        <CardContent className="min-w-0 space-y-6 p-6 sm:p-8">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">Output surface</p>
-                <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl leading-tight text-white sm:text-4xl">
-                  Review the learning experience before it hits the library.
+                <h2 className="mt-3 max-w-[12ch] text-balance font-[family-name:var(--font-display)] text-[2.2rem] leading-[0.97] text-white sm:max-w-none sm:text-4xl sm:leading-tight">
+                  {resultPreview ? "Review the pack before saving it." : "Review the learning experience before it hits the library."}
                 </h2>
               </div>
               <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
@@ -135,7 +164,90 @@ export function CreateStudySetPreview({
             </div>
           ) : (
             <div className="space-y-5">
-              <Tabs className="gap-5" defaultValue="summary">
+              <div className="grid grid-cols-2 gap-2 rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-2 sm:hidden">
+                {PREVIEW_TAB_ITEMS.map((item) => (
+                  <button
+                    className={
+                      mobileTab === item.value
+                        ? "h-11 rounded-[1rem] border border-white/8 bg-white/[0.08] px-3 text-center text-[0.84rem] font-medium text-white transition"
+                        : "h-11 rounded-[1rem] border border-white/8 bg-transparent px-3 text-center text-[0.84rem] font-medium text-zinc-300 transition hover:bg-white/[0.05]"
+                    }
+                    key={item.value}
+                    onClick={() => setMobileTab(item.value)}
+                    type="button"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-4 sm:hidden">
+                {mobileTab === "summary" ? (
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                    <CardContent className="space-y-4 p-5">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Summary</p>
+                      <p className="break-words text-sm leading-8 text-zinc-300 [overflow-wrap:anywhere]">{resultPreview.summary}</p>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {mobileTab === "guide" ? (
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                    <CardContent className="space-y-4 p-5">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Study guide</p>
+                      <StudyGuideRenderer content={resultPreview.studyGuide} />
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {mobileTab === "concepts" ? (
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                    <CardContent className="space-y-4 p-5">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Key concepts</p>
+                      <div className="flex flex-wrap gap-2">
+                        {resultPreview.keyConcepts.map((concept) => (
+                          <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] text-zinc-300" key={concept} variant="outline">
+                            {concept}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {mobileTab === "flashcards" ? (
+                  <div className="space-y-4">
+                    {visibleFlashcards.map((card) => (
+                      <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]" key={`${card.order}-${card.question}`}>
+                        <CardContent className="space-y-4 p-5">
+                          <div className="grid gap-4">
+                            <div className="space-y-2 rounded-[1.2rem] border border-white/8 bg-black/20 p-4">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Question</p>
+                              <p className="break-words text-sm leading-7 text-zinc-200 [overflow-wrap:anywhere]">{card.question}</p>
+                            </div>
+                            <div className="space-y-2 rounded-[1.2rem] border border-white/8 bg-black/20 p-4">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Answer</p>
+                              <p className="break-words text-sm leading-7 text-zinc-300 [overflow-wrap:anywhere]">{card.answer}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {hasMoreFlashcards ? (
+                      <Button
+                        className="h-11 w-full rounded-full border border-white/10 bg-white/[0.05] text-zinc-100 hover:bg-white/[0.08]"
+                        onClick={loadMoreFlashcards}
+                        type="button"
+                        variant="ghost"
+                      >
+                        Load More Flashcards
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <Tabs className="hidden min-w-0 gap-4 sm:flex sm:gap-5" defaultValue="summary">
                 <TabsList className="h-auto w-full flex-nowrap justify-start gap-2 overflow-x-auto rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-2 sm:flex-wrap" variant="line">
                   <TabsTrigger className="rounded-full px-4 py-2 text-sm data-[state=active]:bg-white/[0.08] data-[state=active]:text-white" value="summary">
                     Summary
@@ -151,17 +263,17 @@ export function CreateStudySetPreview({
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent className="space-y-4" value="summary">
-                  <Card className="rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                <TabsContent className="min-w-0 space-y-4" value="summary">
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
                     <CardContent className="space-y-4 p-5">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Summary</p>
-                      <p className="text-sm leading-8 text-zinc-300">{resultPreview.summary}</p>
+                      <p className="break-words text-sm leading-8 text-zinc-300 [overflow-wrap:anywhere]">{resultPreview.summary}</p>
                     </CardContent>
                   </Card>
                 </TabsContent>
 
-                <TabsContent className="space-y-4" value="guide">
-                  <Card className="rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                <TabsContent className="min-w-0 space-y-4" value="guide">
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
                     <CardContent className="space-y-4 p-5">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Study guide</p>
                       <StudyGuideRenderer content={resultPreview.studyGuide} />
@@ -169,8 +281,8 @@ export function CreateStudySetPreview({
                   </Card>
                 </TabsContent>
 
-                <TabsContent className="space-y-4" value="concepts">
-                  <Card className="rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
+                <TabsContent className="min-w-0 space-y-4" value="concepts">
+                  <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]">
                     <CardContent className="space-y-4 p-5">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Key concepts</p>
                       <div className="flex flex-wrap gap-2">
@@ -184,24 +296,34 @@ export function CreateStudySetPreview({
                   </Card>
                 </TabsContent>
 
-                <TabsContent className="space-y-4" value="flashcards">
+                <TabsContent className="min-w-0 space-y-4" value="flashcards">
                   <div className="space-y-4">
-                    {resultPreview.flashcards.map((card) => (
-                      <Card className="rounded-[1.7rem] border border-white/10 bg-white/[0.04]" key={`${card.order}-${card.question}`}>
+                    {visibleFlashcards.map((card) => (
+                      <Card className="max-w-full overflow-hidden rounded-[1.7rem] border border-white/10 bg-white/[0.04]" key={`${card.order}-${card.question}`}>
                         <CardContent className="space-y-4 p-5">
                           <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2 rounded-[1.2rem] border border-white/8 bg-black/20 p-4">
                               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Question</p>
-                              <p className="text-sm leading-7 text-zinc-200">{card.question}</p>
+                              <p className="break-words text-sm leading-7 text-zinc-200 [overflow-wrap:anywhere]">{card.question}</p>
                             </div>
                             <div className="space-y-2 rounded-[1.2rem] border border-white/8 bg-black/20 p-4">
                               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Answer</p>
-                              <p className="text-sm leading-7 text-zinc-300">{card.answer}</p>
+                              <p className="break-words text-sm leading-7 text-zinc-300 [overflow-wrap:anywhere]">{card.answer}</p>
                             </div>
                           </div>
                         </CardContent>
                       </Card>
                     ))}
+                    {hasMoreFlashcards ? (
+                      <Button
+                        className="h-11 w-full rounded-full border border-white/10 bg-white/[0.05] text-zinc-100 hover:bg-white/[0.08]"
+                        onClick={loadMoreFlashcards}
+                        type="button"
+                        variant="ghost"
+                      >
+                        Load More Flashcards
+                      </Button>
+                    ) : null}
                   </div>
                 </TabsContent>
               </Tabs>

@@ -21,6 +21,29 @@ const AUTH_EXPERIENCE_SIGNALS = [
   "Keep oral exam history and rescue progress in one place"
 ] as const;
 
+const AUTH_BENEFITS = [
+  {
+    icon: Orbit,
+    title: "Saved Study History",
+    copy: "Study sets, jobs, and oral exam sessions stay with your account across devices."
+  },
+  {
+    icon: LockKeyhole,
+    title: "Private by Default",
+    copy: "Uploads, queue progress, and generated results remain scoped to your session."
+  },
+  {
+    icon: Stars,
+    title: "Return Anytime",
+    copy: "Leave a long-running PDF job and come back later without losing your place."
+  }
+] as const;
+
+const AUTH_MOBILE_HIGHLIGHTS = [
+  "Saved packs and exam progress stay attached to your account.",
+  "Return to active jobs without losing your place."
+] as const;
+
 function buildEmailRedirectUrl() {
   if (typeof window === "undefined") {
     return undefined;
@@ -198,49 +221,64 @@ export function AuthPage() {
 
   return (
     <section className="relative px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.84fr)]">
-        <Reveal className="space-y-8">
-          <div className="space-y-5">
+      <div className="mx-auto grid max-w-7xl items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.84fr)]">
+        <Reveal className="order-2 space-y-6 sm:space-y-8 lg:order-1">
+          <div className="sm:hidden">
+            <Card className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,181,111,0.06))] shadow-[0_22px_70px_rgba(0,0,0,0.2)]">
+              <CardContent className="space-y-4 p-5">
+                <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-100" variant="outline">
+                  Account access
+                </Badge>
+                <div className="space-y-3">
+                  <h1 className="max-w-[12ch] text-balance font-[family-name:var(--font-display)] text-[2.35rem] leading-[0.94] text-white">
+                    {mode === "signin" ? "Your study history stays with you." : "Start saving your study history."}
+                  </h1>
+                  <p className="text-sm leading-7 text-zinc-300">
+                    {mode === "signin"
+                      ? "Sign in to reopen saved packs and resume your work quickly."
+                      : "Create an account so your study packs, jobs, and exam progress stay attached to you."}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  {AUTH_MOBILE_HIGHLIGHTS.map((highlight) => (
+                    <div className="rounded-[1rem] border border-white/10 bg-white/[0.04] px-3.5 py-3 text-sm leading-6 text-zinc-300" key={highlight}>
+                      {highlight}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="hidden space-y-4 sm:block sm:space-y-5">
             <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-100" variant="outline">
               Account access
             </Badge>
-            <h1 className="max-w-3xl font-[family-name:var(--font-display)] text-5xl leading-[0.95] text-white sm:text-6xl">
+            <h1 className="max-w-[12ch] text-balance font-[family-name:var(--font-display)] text-[clamp(2.95rem,12vw,4.35rem)] leading-[0.92] text-white sm:max-w-3xl sm:text-5xl sm:leading-[0.95] lg:text-6xl">
               {mode === "signin" ? "Pick up your study momentum exactly where you left it." : "Give your study system memory."}
             </h1>
-            <p className="max-w-2xl text-lg leading-8 text-zinc-300">
+            <p className="max-w-2xl text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
               {mode === "signin"
                 ? "Sign in to reopen saved study packs, resume active jobs, and keep exam practice tied to your account."
                 : "Create an account so every guide, flashcard set, and oral exam session stays attached to you."}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="hidden flex-wrap gap-2.5 sm:flex sm:gap-3">
             {AUTH_EXPERIENCE_SIGNALS.map((signal) => (
-              <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[0.72rem] font-medium tracking-[0.16em] text-zinc-300" key={signal} variant="outline">
+              <Badge
+                className="max-w-full rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.68rem] font-medium tracking-[0.14em] text-zinc-300 sm:px-4 sm:text-[0.72rem] sm:tracking-[0.16em]"
+                key={signal}
+                variant="outline"
+              >
                 {signal}
               </Badge>
             ))}
           </div>
 
-          <Card className="overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,181,111,0.06))] shadow-[0_28px_90px_rgba(0,0,0,0.24)]">
+          <Card className="hidden overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,181,111,0.06))] shadow-[0_28px_90px_rgba(0,0,0,0.24)] sm:block">
             <CardContent className="grid gap-4 p-6 sm:grid-cols-3 sm:p-7">
-              {[
-                {
-                  icon: Orbit,
-                  title: "Saved Study History",
-                  copy: "Study sets, jobs, and oral exam sessions stay with your account across devices."
-                },
-                {
-                  icon: LockKeyhole,
-                  title: "Private by Default",
-                  copy: "Uploads, queue progress, and generated results remain scoped to your session."
-                },
-                {
-                  icon: Stars,
-                  title: "Return Anytime",
-                  copy: "Leave a long-running PDF job and come back later without losing your place."
-                }
-              ].map((item) => {
+              {AUTH_BENEFITS.map((item) => {
                 const Icon = item.icon;
 
                 return (
@@ -259,14 +297,14 @@ export function AuthPage() {
           </Card>
         </Reveal>
 
-        <Reveal className="lg:pt-8" delay={0.08}>
+        <Reveal className="order-1 lg:order-2 lg:pt-8" delay={0.08}>
           <Card className="rounded-[2rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.34)] backdrop-blur-xl">
             <CardContent className="space-y-7 p-6 sm:p-8">
               <div className="space-y-3">
                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
                   {mode === "signin" ? "Welcome back" : "New here"}
                 </p>
-                <h2 className="font-[family-name:var(--font-display)] text-4xl leading-tight text-white">
+                <h2 className="max-w-[12ch] text-balance font-[family-name:var(--font-display)] text-[clamp(2.35rem,10vw,3.25rem)] leading-[0.96] text-white sm:max-w-none sm:text-4xl sm:leading-tight">
                   {mode === "signin" ? "Sign in to Study Sphere" : "Create your Study Sphere account"}
                 </h2>
                 <p className="text-sm leading-7 text-zinc-400">

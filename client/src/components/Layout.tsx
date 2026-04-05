@@ -136,7 +136,7 @@ export function Layout({ children }: PropsWithChildren) {
           <PrefetchLink className="flex min-w-0 items-center gap-2.5 sm:gap-3" to="/">
             <StudySphereLogo compact />
             <span className="min-w-0">
-              <span className="block truncate font-[family-name:var(--font-display)] text-[1.85rem] leading-none tracking-tight text-white sm:text-2xl">
+              <span className="block whitespace-nowrap font-[family-name:var(--font-display)] text-[1.85rem] leading-[1.08] tracking-tight text-white sm:text-2xl">
                 Study Sphere
               </span>
               <span className="mt-1 hidden truncate text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-zinc-500 sm:block">

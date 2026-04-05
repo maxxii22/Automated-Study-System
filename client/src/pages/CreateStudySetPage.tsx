@@ -58,6 +58,7 @@ export function CreateStudySetPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isMobileEditorOpen, setIsMobileEditorOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const unsubscribeJobRef = useRef<() => void>(() => {});
@@ -225,12 +226,19 @@ export function CreateStudySetPage() {
   const jobStageText = activeJob?.stage ? (JOB_STAGE_LABELS[activeJob.stage] ?? activeJob.stage) : "Queued";
   const jobStatusLabel = activeJob ? `${jobStageText}${typeof activeJob.progressPercent === "number" ? ` • ${activeJob.progressPercent}%` : ""}` : null;
   const showMobilePreviewFirst = isGeneratingPreview || isRestoringJob || Boolean(resultPreview);
+  const showCompactMobileHero = showMobilePreviewFirst;
   const sourceTextHelpId = "create-source-text-help";
   const sourceTextCountId = "create-source-text-count";
   const generationErrorId = "create-generation-error";
   const canRetryGeneration =
     !isSubmitting &&
     ((sourceType === "text" && lastTextPayloadRef.current !== null) || (sourceType === "pdf" && sourceFile !== null && lastPdfTitleRef.current));
+
+  useEffect(() => {
+    if (showMobilePreviewFirst) {
+      setIsMobileEditorOpen(false);
+    }
+  }, [showMobilePreviewFirst]);
 
   function resetTextInputs() {
     setSourceUrl("");
@@ -400,30 +408,77 @@ export function CreateStudySetPage() {
         <Reveal className="lg:hidden">
           <Card className="rounded-[1.8rem] border border-white/10 bg-[linear-gradient(135deg,rgba(14,18,28,0.96),rgba(10,12,22,0.92))] shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
             <CardContent className="space-y-5 p-5">
-              <div className="space-y-3">
-                <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-100" variant="outline">
-                  Build a study pack
-                </Badge>
-                <h1 className="font-[family-name:var(--font-display)] text-[2.35rem] leading-[0.94] text-white">
-                  Create faster on mobile.
-                </h1>
-                <p className="text-sm leading-7 text-zinc-300">
-                  Choose the source, add the essentials, and preview the result without wading through extra framing.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
-                  {sourceType === "pdf" ? "PDF flow" : "Paste flow"}
-                </Badge>
-                <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
-                  Step {currentStep} of 4
-                </Badge>
-                {jobStatusLabel ? (
-                  <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
-                    {jobStatusLabel}
-                  </Badge>
-                ) : null}
-              </div>
+              {showCompactMobileHero ? (
+                <>
+                  <div className="space-y-3">
+                    <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-100" variant="outline">
+                      {resultPreview ? "Ready to review" : isRestoringJob ? "Restoring job" : "Preparing preview"}
+                    </Badge>
+                    <h1 className="font-[family-name:var(--font-display)] text-[2.05rem] leading-[0.95] text-white">
+                      {resultPreview ? "Review before you save." : "Your study pack is taking shape."}
+                    </h1>
+                    <p className="text-sm leading-7 text-zinc-300">
+                      {resultPreview
+                        ? "Check the output, save it if it feels right, or reopen the editor only if you need to adjust the source."
+                        : previewJobSourceType === "pdf"
+                          ? "Your PDF is processing in the background. Stay here or leave and we’ll reconnect automatically."
+                          : "We’re building the preview now. Stay here or leave and we’ll reconnect automatically."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                      {previewJobSourceType === "pdf" ? "PDF flow" : "Paste flow"}
+                    </Badge>
+                    {resultPreview ? (
+                      <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                        {resultPreview.flashcards.length} flashcards
+                      </Badge>
+                    ) : null}
+                    {jobStatusLabel ? (
+                      <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                        {jobStatusLabel}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {resultPreview ? (
+                    <Button
+                      className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]"
+                      onClick={() => setIsMobileEditorOpen((current) => !current)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      {isMobileEditorOpen ? "Hide Editor" : "Edit Source"}
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <Badge className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-zinc-100" variant="outline">
+                      Build a study pack
+                    </Badge>
+                    <h1 className="font-[family-name:var(--font-display)] text-[2.35rem] leading-[0.94] text-white">
+                      Create faster on mobile.
+                    </h1>
+                    <p className="text-sm leading-7 text-zinc-300">
+                      Choose the source, add the essentials, and preview the result without wading through extra framing.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                      {sourceType === "pdf" ? "PDF flow" : "Paste flow"}
+                    </Badge>
+                    <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                      Step {currentStep} of 4
+                    </Badge>
+                    {jobStatusLabel ? (
+                      <Badge className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.66rem] uppercase tracking-[0.22em] text-zinc-400" variant="outline">
+                        {jobStatusLabel}
+                      </Badge>
+                    ) : null}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </Reveal>
@@ -445,7 +500,7 @@ export function CreateStudySetPage() {
             </div>
           ) : null}
 
-          <Reveal>
+          <Reveal className={cn(showMobilePreviewFirst && !isMobileEditorOpen && "hidden lg:block")}>
             <form aria-busy={isGeneratingPreview || isSaving} className="space-y-6" onSubmit={handleSubmit}>
               <Card className="rounded-[2rem] border border-white/10 bg-black/34 shadow-[0_30px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl">
                 <CardContent className="space-y-8 p-6 sm:p-8">

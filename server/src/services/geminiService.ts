@@ -636,7 +636,8 @@ export async function transcribeExamAnswer(payload: AudioTranscriptionInput): Pr
               "Return plain text only.",
               "Do not summarize.",
               "Preserve technical vocabulary and named concepts.",
-              "If the speech is unclear, transcribe the best possible interpretation without adding commentary."
+              "If the audio contains only silence, breaths, room noise, taps, static, or no intelligible speech, return an empty string.",
+              "Do not guess, invent, or infer missing words."
             ].join(" ")
           }
         ]
@@ -656,7 +657,10 @@ export async function transcribeExamAnswer(payload: AudioTranscriptionInput): Pr
             }
           ]
         }
-      ]
+      ],
+      generationConfig: {
+        temperature: 0
+      }
     },
     action: "Gemini transcription request",
     priority: "high"
@@ -664,7 +668,11 @@ export async function transcribeExamAnswer(payload: AudioTranscriptionInput): Pr
   const transcript = extractTextResponse(data).trim();
 
   if (!transcript) {
-    throw new Error("No speech transcript was returned from the recorded answer.");
+    return "";
+  }
+
+  if (/^(?:no\s+(?:speech|audio)\s+detected|silence|inaudible|unintelligible)$/i.test(transcript)) {
+    return "";
   }
 
   return transcript;

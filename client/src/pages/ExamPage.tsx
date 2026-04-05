@@ -42,6 +42,8 @@ import {
 } from "../lib/api";
 import { readCachedStudySet, writeCachedStudySet } from "../lib/studySetCache";
 
+const SPEECH_DETECTION_THRESHOLD = 0.018;
+
 function getExamRescueModeStorageKey(studySetId: string) {
   return `study-sphere.exam-rescue-mode:${studySetId}`;
 }
@@ -148,10 +150,81 @@ export function ExamPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const monitoringFrameRef = useRef<number | null>(null);
+  const detectedSpeechLevelRef = useRef(0);
   const answerBeforeRecordingRef = useRef("");
   const [isRescueModeEnabled, setIsRescueModeEnabled] = useState(() =>
     rescueQueryParam === "off" ? false : rescueQueryParam === "on" ? true : readSavedExamRescueMode(id)
   );
+
+  function stopAudioLevelMonitor() {
+    if (monitoringFrameRef.current !== null) {
+      window.cancelAnimationFrame(monitoringFrameRef.current);
+      monitoringFrameRef.current = null;
+    }
+
+    analyserRef.current?.disconnect();
+    analyserRef.current = null;
+    audioSourceRef.current?.disconnect();
+    audioSourceRef.current = null;
+
+    const audioContext = audioContextRef.current;
+    audioContextRef.current = null;
+    detectedSpeechLevelRef.current = 0;
+
+    if (audioContext) {
+      void audioContext.close().catch(() => undefined);
+    }
+  }
+
+  async function startAudioLevelMonitor(stream: MediaStream) {
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      detectedSpeechLevelRef.current = Number.POSITIVE_INFINITY;
+      return;
+    }
+
+    const audioContext = new AudioContextConstructor();
+    const analyser = audioContext.createAnalyser();
+    const audioSource = audioContext.createMediaStreamSource(stream);
+    const samples = new Float32Array(analyser.fftSize);
+
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.15;
+    audioSource.connect(analyser);
+
+    if (audioContext.state === "suspended") {
+      await audioContext.resume().catch(() => undefined);
+    }
+
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+    audioSourceRef.current = audioSource;
+    detectedSpeechLevelRef.current = 0;
+
+    const measureLevel = () => {
+      analyser.getFloatTimeDomainData(samples);
+
+      let peak = 0;
+      for (const sample of samples) {
+        const amplitude = Math.abs(sample);
+        if (amplitude > peak) {
+          peak = amplitude;
+        }
+      }
+
+      detectedSpeechLevelRef.current = Math.max(detectedSpeechLevelRef.current, peak);
+      monitoringFrameRef.current = window.requestAnimationFrame(measureLevel);
+    };
+
+    monitoringFrameRef.current = window.requestAnimationFrame(measureLevel);
+  }
 
   function selectActiveRescueAttempt(attempts: RescueAttempt[]) {
     return attempts.find((attempt) => attempt.status === "open") ?? attempts.find((attempt) => attempt.status === "needs_more_help") ?? null;
@@ -293,6 +366,7 @@ export function ExamPage() {
       ignore = true;
       mediaRecorderRef.current?.stop();
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      stopAudioLevelMonitor();
     };
   }, [id, isRescueModeEnabled]);
 
@@ -426,6 +500,8 @@ export function ExamPage() {
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
 
+      await startAudioLevelMonitor(stream);
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
@@ -434,14 +510,23 @@ export function ExamPage() {
 
       recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const detectedSpeechLevel = detectedSpeechLevelRef.current;
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
         chunksRef.current = [];
+        stopAudioLevelMonitor();
 
         if (!blob.size) {
           setRecordingState("idle");
           setError("No audio was captured. Try recording again.");
+          return;
+        }
+
+        if (detectedSpeechLevel < SPEECH_DETECTION_THRESHOLD) {
+          setRecordingState("idle");
+          setError(null);
+          setRecordingHint("No speech was detected, so your answer was left unchanged.");
           return;
         }
 
@@ -450,9 +535,17 @@ export function ExamPage() {
 
         try {
           const transcript = await transcribeExamAnswer(blob);
-          const mergedAnswer = [answerBeforeRecordingRef.current, transcript.trim()]
+          const cleanedTranscript = transcript.trim();
+
+          if (!cleanedTranscript) {
+            setAnswer(answerBeforeRecordingRef.current);
+            setRecordingHint("No speech was detected, so your answer was left unchanged.");
+            return;
+          }
+
+          const mergedAnswer = [answerBeforeRecordingRef.current, cleanedTranscript]
             .filter(Boolean)
-            .join(answerBeforeRecordingRef.current && transcript.trim() ? "\n" : "");
+            .join(answerBeforeRecordingRef.current && cleanedTranscript ? "\n" : "");
 
           setAnswer(mergedAnswer);
           setRecordingHint("Transcript added. Review it, then submit your answer.");
@@ -478,6 +571,7 @@ export function ExamPage() {
       setError(message);
       setRecordingHint("You can still type your answer if recording is unavailable.");
       setRecordingState("idle");
+      stopAudioLevelMonitor();
     }
   }
 
