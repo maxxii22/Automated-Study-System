@@ -16,23 +16,29 @@ export function createSocketServer(httpServer: HttpServer) {
     }
   });
 
-  io.use(async (socket, next) => {
-    const token = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : null;
+  io.use((socket, next) => {
+    void (async () => {
+      try {
+        const token = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : null;
 
-    if (!token) {
-      next(new Error("Authentication is required."));
-      return;
-    }
+        if (!token) {
+          next(new Error("Authentication is required."));
+          return;
+        }
 
-    const user = await verifyAccessToken(token);
+        const user = await verifyAccessToken(token);
 
-    if (!user) {
-      next(new Error("Authentication failed."));
-      return;
-    }
+        if (!user) {
+          next(new Error("Authentication failed."));
+          return;
+        }
 
-    socket.data.userId = user.id;
-    next();
+        socket.data.userId = user.id;
+        next();
+      } catch (error) {
+        next(error instanceof Error ? error : new Error("Socket authentication failed."));
+      }
+    })();
   });
 
   io.on("connection", (socket) => {

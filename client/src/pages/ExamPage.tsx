@@ -432,7 +432,7 @@ export function ExamPage() {
 
     try {
       const response = await evaluateExamTurn({
-        studySet,
+        studySetId: studySet.id,
         currentQuestion: session.currentQuestion,
         userAnswer: answer.trim(),
         turns: session.turns,

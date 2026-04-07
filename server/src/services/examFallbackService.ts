@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import type { EvaluateExamTurnRequest, EvaluateExamTurnResponse, ExamQuestion, StudySet } from "@automated-study-system/shared";
+import type {
+  EvaluateExamTurnRequest as PublicEvaluateExamTurnRequest,
+  EvaluateExamTurnResponse,
+  ExamQuestion,
+  StudySet
+} from "@automated-study-system/shared";
+
+type EvaluateExamTurnInput = Omit<PublicEvaluateExamTurnRequest, "studySetId"> & {
+  studySet: StudySet;
+};
 
 const STOP_WORDS = new Set([
   "a",
@@ -157,7 +166,7 @@ function buildIdealAnswer(studySet: StudySet, currentQuestion: ExamQuestion) {
   return truncate(relevantFlashcard?.answer ?? studySet.summary, 280);
 }
 
-function buildNextQuestion(payload: EvaluateExamTurnRequest, classification: "strong" | "partial" | "weak", weakTopics: string[]): ExamQuestion | undefined {
+function buildNextQuestion(payload: EvaluateExamTurnInput, classification: "strong" | "partial" | "weak", weakTopics: string[]): ExamQuestion | undefined {
   if (classification !== "strong" && weakTopics[0]) {
     return {
       id: randomUUID(),
@@ -186,7 +195,7 @@ function buildNextQuestion(payload: EvaluateExamTurnRequest, classification: "st
   };
 }
 
-export function evaluateExamTurnLocally(payload: EvaluateExamTurnRequest): EvaluateExamTurnResponse {
+export function evaluateExamTurnLocally(payload: EvaluateExamTurnInput): EvaluateExamTurnResponse {
   const answerTokens = uniqueTokens(payload.userAnswer);
   const referenceTokens = uniqueTokens(buildReferenceContext(payload.studySet, payload.currentQuestion));
   const matchingTokens = answerTokens.filter((token) => referenceTokens.includes(token));
@@ -242,7 +251,7 @@ export function evaluateExamTurnLocally(payload: EvaluateExamTurnRequest): Evalu
   };
 }
 
-function currentQuestionConceptCount(payload: EvaluateExamTurnRequest) {
+function currentQuestionConceptCount(payload: EvaluateExamTurnInput) {
   const concepts = [
     ...(payload.currentQuestion.focusTopic ? [payload.currentQuestion.focusTopic] : []),
     ...payload.studySet.keyConcepts.slice(0, 4)

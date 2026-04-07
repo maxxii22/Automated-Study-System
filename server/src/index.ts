@@ -2,14 +2,15 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
-import multer from "multer";
 
 import { env, getAllowedClientOrigins } from "./config/env.js";
 import { prisma } from "./lib/prisma.js";
 import { inspectRedisSafety, redis } from "./lib/redis.js";
 import { createSocketServer } from "./lib/socket.js";
-import { logError, logInfo } from "./lib/logger.js";
+import { logInfo } from "./lib/logger.js";
+import { asyncHandler } from "./middleware/asyncHandler.js";
 import { requireAuth } from "./middleware/auth.js";
+import { errorHandler } from "./middleware/errorHandler.js";
 import { requestMetricsMiddleware } from "./middleware/metrics.js";
 import { getStudyQueueCounts } from "./queue/studyGenerationQueue.js";
 import { getWorkerHeartbeat } from "./services/cacheService.js";
@@ -44,7 +45,7 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 app.use(requestMetricsMiddleware);
 
-app.get("/api/health", async (_request, response) => {
+app.get("/api/health", asyncHandler(async (_request, response) => {
   await ensurePgVectorInfrastructure();
   const [database, redisStatus, queueCounts, redisSafety, workerHeartbeat] = await Promise.allSettled([
     prisma.$queryRaw`SELECT 1`,
@@ -69,49 +70,26 @@ app.get("/api/health", async (_request, response) => {
     redisPolicy: redisSafety.status === "fulfilled" ? redisSafety.value : null,
     worker: workerHeartbeat.status === "fulfilled" ? workerHeartbeat.value : null
   });
-});
+}));
 
-app.get("/api/ready", async (_request, response) => {
+app.get("/api/ready", asyncHandler(async (_request, response) => {
   const [database, redisStatus] = await Promise.allSettled([prisma.$queryRaw`SELECT 1`, redis.ping()]);
   const ready = database.status === "fulfilled" && redisStatus.status === "fulfilled";
 
   response.status(ready ? 200 : 503).json({
     ready
   });
-});
+}));
 
-app.get("/api/metrics", async (_request, response) => {
+app.get("/api/metrics", asyncHandler(async (_request, response) => {
   const output = await renderPrometheusMetrics();
   response.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
   response.send(output);
-});
+}));
 
-app.use("/api/study-jobs", requireAuth, studyJobRouter);
-app.use("/api/study-sets", requireAuth, studySetRouter);
-app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-  if (error instanceof multer.MulterError) {
-    return response.status(400).json({
-      message: error.code === "LIMIT_FILE_SIZE" ? "PDF must be 10 MB or smaller." : error.message
-    });
-  }
-
-  if (error instanceof Error) {
-    const maybeStatus = (error as Error & { status?: unknown }).status;
-    const status =
-      typeof maybeStatus === "number" && maybeStatus >= 400 && maybeStatus < 600
-        ? maybeStatus
-        : 500;
-
-    logError("Unhandled API error", {
-      error: error.message,
-      status
-    });
-
-    return response.status(status).json({ message: error.message });
-  }
-
-  return response.status(500).json({ message: "Unexpected server error." });
-});
+app.use("/api/study-jobs", asyncHandler(requireAuth), studyJobRouter);
+app.use("/api/study-sets", asyncHandler(requireAuth), studySetRouter);
+app.use(errorHandler);
 
 if (!process.env.VERCEL) {
   void ensurePgVectorInfrastructure();

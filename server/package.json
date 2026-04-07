@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "start:worker": "node dist/worker.js",
     "build": "npm run build --workspace @automated-study-system/shared --prefix .. && tsc -p tsconfig.json",
+    "test": "node run-vitest.mjs",
+    "test:watch": "node run-vitest.mjs --watch",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
@@ -36,8 +38,11 @@
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.7.5",
+    "@types/supertest": "^7.2.0",
     "prisma": "^5.21.1",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.2"
   }
 }

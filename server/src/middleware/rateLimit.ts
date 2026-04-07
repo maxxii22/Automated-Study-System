@@ -6,6 +6,7 @@ function createLimiter(max: number, message: string) {
     max,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (request) => request.authUser?.id ?? request.ip ?? request.socket.remoteAddress ?? "unknown",
     message: {
       message
     }

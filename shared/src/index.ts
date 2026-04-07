@@ -260,7 +260,7 @@ export type DocumentCacheRecord = {
 };
 
 export type EvaluateExamTurnRequest = {
-  studySet: StudySet;
+  studySetId: string;
   currentQuestion: ExamQuestion;
   userAnswer: string;
   turns: ExamTurnResult[];

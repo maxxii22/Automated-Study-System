@@ -22,16 +22,20 @@ export async function requireAuth(request: Request, response: Response, next: Ne
     });
   }
 
-  const user = await verifyAccessToken(accessToken);
+  try {
+    const user = await verifyAccessToken(accessToken);
 
-  if (!user) {
-    return response.status(401).json({
-      message: "Your session is invalid or expired. Please sign in again."
-    });
+    if (!user) {
+      return response.status(401).json({
+        message: "Your session is invalid or expired. Please sign in again."
+      });
+    }
+
+    request.authUser = user;
+    next();
+  } catch (error) {
+    next(error);
   }
-
-  request.authUser = user;
-  next();
 }
 
 export function requireAdmin(request: Request, response: Response, next: NextFunction) {

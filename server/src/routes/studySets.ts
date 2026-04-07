@@ -10,7 +10,8 @@ import {
 } from "../controllers/rescueController.js";
 import { saveStudySetController } from "../controllers/saveStudySetController.js";
 import { transcribeExamAnswerController } from "../controllers/transcribeExamAnswerController.js";
-import { generateStudySetRateLimit } from "../middleware/rateLimit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import { examRateLimit, generateStudySetRateLimit } from "../middleware/rateLimit.js";
 import { audioUpload } from "../middleware/upload.js";
 import {
   deleteStudySetController,
@@ -21,16 +22,16 @@ import {
 
 export const studySetRouter = Router();
 
-studySetRouter.get("/", listStudySetsController);
-studySetRouter.get("/:id/exam-sessions", listExamSessionsController);
-studySetRouter.put("/:id/exam-sessions/:sessionId", saveExamSessionController);
-studySetRouter.get("/:id/rescue-attempts", listRescueAttemptsController);
-studySetRouter.post("/:id/rescue-attempts", createRescueAttemptController);
-studySetRouter.post("/:id/rescue-attempts/:rescueId/retry", submitRescueRetryController);
-studySetRouter.get("/:id/flashcards", listStudySetFlashcardsController);
-studySetRouter.get("/:id", getStudySetController);
-studySetRouter.post("/generate", generateStudySetRateLimit, generateStudySetController);
-studySetRouter.post("/", generateStudySetRateLimit, saveStudySetController);
-studySetRouter.post("/exam-turn", evaluateExamTurnController);
-studySetRouter.post("/transcribe-answer", audioUpload.single("audioFile"), transcribeExamAnswerController);
-studySetRouter.delete("/:id", deleteStudySetController);
+studySetRouter.get("/", asyncHandler(listStudySetsController));
+studySetRouter.get("/:id/exam-sessions", asyncHandler(listExamSessionsController));
+studySetRouter.put("/:id/exam-sessions/:sessionId", asyncHandler(saveExamSessionController));
+studySetRouter.get("/:id/rescue-attempts", asyncHandler(listRescueAttemptsController));
+studySetRouter.post("/:id/rescue-attempts", asyncHandler(createRescueAttemptController));
+studySetRouter.post("/:id/rescue-attempts/:rescueId/retry", asyncHandler(submitRescueRetryController));
+studySetRouter.get("/:id/flashcards", asyncHandler(listStudySetFlashcardsController));
+studySetRouter.get("/:id", asyncHandler(getStudySetController));
+studySetRouter.post("/generate", generateStudySetRateLimit, asyncHandler(generateStudySetController));
+studySetRouter.post("/", generateStudySetRateLimit, asyncHandler(saveStudySetController));
+studySetRouter.post("/exam-turn", examRateLimit, asyncHandler(evaluateExamTurnController));
+studySetRouter.post("/transcribe-answer", examRateLimit, audioUpload.single("audioFile"), asyncHandler(transcribeExamAnswerController));
+studySetRouter.delete("/:id", asyncHandler(deleteStudySetController));

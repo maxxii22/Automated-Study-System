@@ -3,7 +3,7 @@ import type {
   ExamQuestion,
   ExamSession,
   ExamTurnResult,
-  EvaluateExamTurnRequest,
+  EvaluateExamTurnRequest as PublicEvaluateExamTurnRequest,
   EvaluateExamTurnResponse,
   GenerateStudySetResponse,
   StudySet
@@ -39,6 +39,10 @@ type AudioTranscriptionInput = {
     mimeType: string;
     fileName: string;
   };
+};
+
+type EvaluateExamTurnInput = Omit<PublicEvaluateExamTurnRequest, "studySetId"> & {
+  studySet: StudySet;
 };
 
 const studySetSchema = z.object({
@@ -322,7 +326,7 @@ function buildExamEvaluationSystemPrompt() {
   ].join(" ");
 }
 
-function buildExamEvaluationUserPrompt(payload: EvaluateExamTurnRequest) {
+function buildExamEvaluationUserPrompt(payload: EvaluateExamTurnInput) {
   const compactStudyGuide = selectFocusedStudyGuideExcerpt(payload.studySet, payload.currentQuestion);
   const compactSourceText = selectSourceExcerpt(payload.studySet, payload.currentQuestion);
   const compactFlashcards = selectExamFlashcardContext(payload.studySet, payload.currentQuestion);
@@ -534,7 +538,7 @@ export async function generateStudyMaterials(payload: StudyGenerationInput): Pro
   return generateStudyMaterialsWithGemini(payload);
 }
 
-async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnRequest): Promise<EvaluateExamTurnResponse> {
+async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnInput): Promise<EvaluateExamTurnResponse> {
   const { apiKey, model } = getGeminiConfig("exam");
   const data = await fetchGeminiJson<unknown>({
     url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -619,7 +623,7 @@ async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnRequest): Pro
   };
 }
 
-export async function evaluateExamTurn(payload: EvaluateExamTurnRequest): Promise<EvaluateExamTurnResponse> {
+export async function evaluateExamTurn(payload: EvaluateExamTurnInput): Promise<EvaluateExamTurnResponse> {
   return evaluateExamTurnWithGemini(payload);
 }
 
