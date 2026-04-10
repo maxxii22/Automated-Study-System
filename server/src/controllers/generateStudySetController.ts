@@ -1,24 +1,19 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { logInfo } from "../lib/logger.js";
 import { generateStudyMaterials } from "../services/geminiService.js";
 import { GeminiApiError, isGeminiRateLimitError } from "../services/geminiApi.js";
 import { incrementMetric } from "../services/metricsService.js";
-import { env } from "../config/env.js";
-import { ensurePgVectorInfrastructure, isPgVectorReady, queryNearestDocumentIds } from "../services/pgVectorService.js";
 import { findStudySet } from "../services/studySetQueryService.js";
 import {
-  averageEmbeddings,
   buildTextDocumentHash,
-  chunkSemanticText,
-  embedTextChunks,
-  findBestSemanticCandidate,
+  findSemanticCacheMatch,
   normalizeSemanticText,
-  selectSemanticMatch,
   shouldRunSemanticCache,
   toGeneratedStudySetResponse
 } from "../services/semanticCacheService.js";
-import { findDocumentByHashForOwner, findSemanticCandidateDocuments, findSemanticCandidateDocumentsByIds } from "../services/studyJobRepository.js";
+import { findDocumentByHashForOwner } from "../services/studyJobRepository.js";
 
 export async function generateStudySetController(request: Request, response: Response) {
   const title = z.string().min(2).max(120).safeParse(request.body.title);
@@ -55,45 +50,25 @@ export async function generateStudySetController(request: Request, response: Res
     }
 
     if (shouldRunSemanticCache(normalizedSourceText)) {
-      await ensurePgVectorInfrastructure();
-      const queryChunks = chunkSemanticText(
-        [
-          `Title: ${title.data}`,
-          `Source type: text`,
-          `Core content: ${normalizedSourceText}`
-        ].join("\n")
-      );
-
-      if (queryChunks.length > 0) {
-        const queryEmbeddings = await embedTextChunks(queryChunks);
-        const queryVector = averageEmbeddings(queryEmbeddings.map((item) => item.embedding));
-        let semanticMatch: ReturnType<typeof selectSemanticMatch> | ReturnType<typeof findBestSemanticCandidate> | null = null;
-
-        if (isPgVectorReady()) {
-          const rankedIds = await queryNearestDocumentIds("text", ownerId, queryVector, env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-          const rankedCandidates = await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item) => item.id));
-          semanticMatch = selectSemanticMatch({
-            title: title.data,
-            candidates: rankedCandidates
-              .map((candidate) => ({
-                similarity: rankedIds.find((item) => item.id === candidate.documentId)?.similarity ?? 0,
-                candidate
-              }))
-              .filter((item) => item.similarity > 0)
-          });
-        } else {
-          const candidates = await findSemanticCandidateDocuments(ownerId, "text", env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-          semanticMatch = findBestSemanticCandidate({
-            title: title.data,
-            queryEmbeddings,
-            candidates
-          });
-        }
+      try {
+        const semanticMatch = await findSemanticCacheMatch({
+          ownerId,
+          title: title.data,
+          sourceType: "text",
+          sourceText: normalizedSourceText,
+          excludedDocumentHash: exactTextHash
+        });
 
         if (semanticMatch) {
           await incrementMetric("study_job_cache_hits_total");
           return response.status(200).json(toGeneratedStudySetResponse(semanticMatch.candidate.studySet));
         }
+      } catch (error) {
+        logInfo("Semantic cache lookup skipped during direct study generation", {
+          ownerId,
+          sourceType: "text",
+          reason: error instanceof Error ? error.message : "Unknown semantic cache lookup error"
+        });
       }
     }
 

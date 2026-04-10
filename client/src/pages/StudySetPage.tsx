@@ -48,6 +48,7 @@ const STUDY_SET_RETRY_DELAYS_MS = [350, 900];
 
 type StudySetPageLocationState = {
   focusConcept?: string;
+  studySet?: StudySet;
   studySetPreview?: StudySetListItem;
 };
 
@@ -453,6 +454,9 @@ export function StudySetPage() {
       ? locationState.focusConcept ?? null
       : null;
   }, [locationState]);
+  const preloadedStudySet = useMemo(() => {
+    return locationState?.studySet?.id === id ? locationState.studySet : null;
+  }, [id, locationState]);
   const previewStudySet = useMemo(() => {
     const nextPreview = locationState?.studySetPreview ?? readCachedStudySetPreview(id);
     return nextPreview ? createPreviewStudySet(nextPreview) : null;
@@ -539,7 +543,7 @@ export function StudySetPage() {
 
   useEffect(() => {
     let ignore = false;
-    const cachedStudySet = readCachedStudySet(id);
+    const cachedStudySet = preloadedStudySet ?? readCachedStudySet(id);
     const hasIncompleteFallback =
       ((cachedStudySet?.flashcardCount ?? 0) > 0 && (cachedStudySet?.flashcards.length ?? 0) === 0) || Boolean(previewStudySet);
 
@@ -554,6 +558,9 @@ export function StudySetPage() {
     setIsLoadingExamSessions(true);
 
     if (cachedStudySet) {
+      if (preloadedStudySet) {
+        writeCachedStudySet(preloadedStudySet);
+      }
       setStudySet(cachedStudySet);
       setFlashcards(cachedStudySet.flashcards);
       setFlashcardCursor(cachedStudySet.flashcardCount > cachedStudySet.flashcards.length ? cachedStudySet.flashcards.at(-1)?.id ?? null : null);
@@ -615,7 +622,7 @@ export function StudySetPage() {
     return () => {
       ignore = true;
     };
-  }, [focusConcept, id, previewStudySet]);
+  }, [focusConcept, id, preloadedStudySet, previewStudySet]);
 
   useEffect(() => {
     setIsMobileDeckExpanded(false);

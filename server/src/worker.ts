@@ -13,13 +13,8 @@ import { publishStudyJobEvent } from "./services/jobEvents.js";
 import { incrementMetric, observeDurationMetric } from "./services/metricsService.js";
 import { readSourceDocument } from "./services/objectStorage.js";
 import { extractPdfText } from "./services/pdfExtractionService.js";
-import { ensurePgVectorInfrastructure, isPgVectorReady, queryNearestDocumentIds } from "./services/pgVectorService.js";
 import {
-  averageEmbeddings,
-  chunkSemanticText,
-  embedTextChunks,
-  findBestSemanticCandidate,
-  selectSemanticMatch,
+  findSemanticCacheMatch,
   shouldRunSemanticCache,
   toGeneratedStudySetResponse
 } from "./services/semanticCacheService.js";
@@ -27,16 +22,9 @@ import { createStudySet } from "./services/studySetRepository.js";
 import { indexStudySetForSemanticCache } from "./services/studySetSemanticIndexService.js";
 import {
   attachDocumentToStudySet,
-  findSemanticCandidateDocuments,
-  findSemanticCandidateDocumentsByIds,
   updateDocumentExtractedText,
   updateStudyJob
 } from "./services/studyJobRepository.js";
-
-type RankedDocument = Awaited<ReturnType<typeof queryNearestDocumentIds>>[number];
-type SemanticCandidateDocument = Awaited<ReturnType<typeof findSemanticCandidateDocumentsByIds>>[number];
-type SemanticCacheDocument = Awaited<ReturnType<typeof findSemanticCandidateDocuments>>[number];
-type EmbeddedChunk = Awaited<ReturnType<typeof embedTextChunks>>[number];
 
 async function setProgress(ownerId: string, jobId: string, stage: string, progressPercent: number) {
   const job = await updateStudyJob(ownerId, jobId, {
@@ -55,6 +43,32 @@ async function setProgress(ownerId: string, jobId: string, stage: string, progre
   return job;
 }
 
+async function findBestEffortSemanticCacheMatch(input: {
+  jobId: string;
+  ownerId: string;
+  title: string;
+  sourceType: "text" | "pdf";
+  sourceText: string;
+  documentHash: string;
+}) {
+  try {
+    return await findSemanticCacheMatch({
+      ownerId: input.ownerId,
+      title: input.title,
+      sourceType: input.sourceType,
+      sourceText: input.sourceText,
+      excludedDocumentHash: input.documentHash
+    });
+  } catch (error) {
+    logInfo("Semantic cache lookup skipped for study job", {
+      jobId: input.jobId,
+      sourceType: input.sourceType,
+      reason: error instanceof Error ? error.message : "Unknown semantic cache lookup error"
+    });
+    return null;
+  }
+}
+
 const worker = new Worker(
   env.STUDY_JOB_QUEUE_NAME,
   async (bullJob) => {
@@ -70,69 +84,39 @@ const worker = new Worker(
 
       if (shouldRunSemanticCache(normalizedSourceText)) {
         await setProgress(ownerId, jobId, "checking-semantic-cache", 35);
-        await ensurePgVectorInfrastructure();
+        const semanticMatch = await findBestEffortSemanticCacheMatch({
+          jobId,
+          ownerId,
+          title,
+          sourceType: "text",
+          sourceText: normalizedSourceText,
+          documentHash
+        });
 
-        const queryChunks = chunkSemanticText(
-          [
-            `Title: ${title}`,
-            "Source type: text",
-            `Core content: ${normalizedSourceText}`
-          ].join("\n")
-        );
+        if (semanticMatch) {
+          const completedJob = await updateStudyJob(ownerId, jobId, {
+            status: "completed",
+            stage: "semantic-cache-hit",
+            progressPercent: 100,
+            cacheHit: true,
+            generatedPayload: toGeneratedStudySetResponse(semanticMatch.candidate.studySet),
+            completedAt: new Date(),
+            errorCode: null,
+            errorMessage: null
+          });
 
-        if (queryChunks.length > 0) {
-          const queryEmbeddings = await embedTextChunks(queryChunks);
-          const queryVector = averageEmbeddings(queryEmbeddings.map((item: EmbeddedChunk) => item.embedding));
-          let semanticMatch: ReturnType<typeof selectSemanticMatch> | ReturnType<typeof findBestSemanticCandidate> | null = null;
+          await incrementMetric("study_job_cache_hits_total");
+          await cacheStudyJob(completedJob);
+          await publishStudyJobEvent({
+            type: "study-job:completed",
+            jobId,
+            job: completedJob
+          });
 
-          if (isPgVectorReady()) {
-            const rankedIds = await queryNearestDocumentIds("text", ownerId, queryVector, env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-            const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item: RankedDocument) => item.id))).filter(
-              (candidate: SemanticCandidateDocument) => candidate.hash !== documentHash
-            );
-            semanticMatch = selectSemanticMatch({
-              title,
-              candidates: rankedCandidates
-                .map((candidate: SemanticCandidateDocument) => ({
-                  similarity: rankedIds.find((item: RankedDocument) => item.id === candidate.documentId)?.similarity ?? 0,
-                  candidate
-                }))
-                .filter((item: { similarity: number; candidate: SemanticCandidateDocument }) => item.similarity > 0)
-            });
-          } else {
-            const candidates = await findSemanticCandidateDocuments(ownerId, "text", env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-            semanticMatch = findBestSemanticCandidate({
-              title,
-              queryEmbeddings,
-              candidates: candidates.filter((candidate: SemanticCacheDocument) => candidate.hash !== documentHash)
-            });
-          }
+          await incrementMetric("study_jobs_completed_total");
+          await observeDurationMetric("study_job_processing_duration_ms", Date.now() - startedAt);
 
-          if (semanticMatch) {
-            const completedJob = await updateStudyJob(ownerId, jobId, {
-              status: "completed",
-              stage: "semantic-cache-hit",
-              progressPercent: 100,
-              cacheHit: true,
-              generatedPayload: toGeneratedStudySetResponse(semanticMatch.candidate.studySet),
-              completedAt: new Date(),
-              errorCode: null,
-              errorMessage: null
-            });
-
-            await incrementMetric("study_job_cache_hits_total");
-            await cacheStudyJob(completedJob);
-            await publishStudyJobEvent({
-              type: "study-job:completed",
-              jobId,
-              job: completedJob
-            });
-
-            await incrementMetric("study_jobs_completed_total");
-            await observeDurationMetric("study_job_processing_duration_ms", Date.now() - startedAt);
-
-            return completedJob.id;
-          }
+          return completedJob.id;
         }
       }
 
@@ -183,73 +167,43 @@ const worker = new Worker(
 
     if (shouldRunSemanticCache(extractedText)) {
       await setProgress(ownerId, jobId, "checking-semantic-cache", 45);
-      await ensurePgVectorInfrastructure();
+      const semanticMatch = await findBestEffortSemanticCacheMatch({
+        jobId,
+        ownerId,
+        title,
+        sourceType: "pdf",
+        sourceText: extractedText,
+        documentHash
+      });
 
-      const queryChunks = chunkSemanticText(
-        [
-          `Title: ${title}`,
-          "Source type: pdf",
-          `Core content: ${extractedText}`
-        ].join("\n")
-      );
+      if (semanticMatch) {
+        await incrementMetric("study_job_cache_hits_total");
+        await cacheStudySetIdForHash(documentHash, semanticMatch.candidate.studySet.id);
+        await attachDocumentToStudySet(documentHash, semanticMatch.candidate.studySet.id);
 
-      if (queryChunks.length > 0) {
-        const queryEmbeddings = await embedTextChunks(queryChunks);
-        const queryVector = averageEmbeddings(queryEmbeddings.map((item: EmbeddedChunk) => item.embedding));
-        let semanticMatch: ReturnType<typeof selectSemanticMatch> | ReturnType<typeof findBestSemanticCandidate> | null = null;
+        const completedJob = await updateStudyJob(ownerId, jobId, {
+          status: "completed",
+          stage: "semantic-cache-hit",
+          progressPercent: 100,
+          cacheHit: true,
+          studySetId: semanticMatch.candidate.studySet.id,
+          completedAt: new Date(),
+          errorCode: null,
+          errorMessage: null
+        });
 
-        if (isPgVectorReady()) {
-          const rankedIds = await queryNearestDocumentIds("pdf", ownerId, queryVector, env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-          const rankedCandidates = (await findSemanticCandidateDocumentsByIds(ownerId, rankedIds.map((item: RankedDocument) => item.id))).filter(
-            (candidate: SemanticCandidateDocument) => candidate.hash !== documentHash
-          );
-          semanticMatch = selectSemanticMatch({
-            title,
-            candidates: rankedCandidates
-              .map((candidate: SemanticCandidateDocument) => ({
-                similarity: rankedIds.find((item: RankedDocument) => item.id === candidate.documentId)?.similarity ?? 0,
-                candidate
-              }))
-              .filter((item: { similarity: number; candidate: SemanticCandidateDocument }) => item.similarity > 0)
-          });
-        } else {
-          const candidates = await findSemanticCandidateDocuments(ownerId, "pdf", env.SEMANTIC_CACHE_CANDIDATE_LIMIT);
-          semanticMatch = findBestSemanticCandidate({
-            title,
-            queryEmbeddings,
-            candidates: candidates.filter((candidate: SemanticCacheDocument) => candidate.hash !== documentHash)
-          });
-        }
+        await cacheStudyJob(completedJob);
+        await publishStudyJobEvent({
+          type: "study-job:completed",
+          jobId,
+          job: completedJob,
+          studySetId: semanticMatch.candidate.studySet.id
+        });
 
-        if (semanticMatch) {
-          await incrementMetric("study_job_cache_hits_total");
-          await cacheStudySetIdForHash(documentHash, semanticMatch.candidate.studySet.id);
-          await attachDocumentToStudySet(documentHash, semanticMatch.candidate.studySet.id);
+        await incrementMetric("study_jobs_completed_total");
+        await observeDurationMetric("study_job_processing_duration_ms", Date.now() - startedAt);
 
-          const completedJob = await updateStudyJob(ownerId, jobId, {
-            status: "completed",
-            stage: "semantic-cache-hit",
-            progressPercent: 100,
-            cacheHit: true,
-            studySetId: semanticMatch.candidate.studySet.id,
-            completedAt: new Date(),
-            errorCode: null,
-            errorMessage: null
-          });
-
-          await cacheStudyJob(completedJob);
-          await publishStudyJobEvent({
-            type: "study-job:completed",
-            jobId,
-            job: completedJob,
-            studySetId: semanticMatch.candidate.studySet.id
-          });
-
-          await incrementMetric("study_jobs_completed_total");
-          await observeDurationMetric("study_job_processing_duration_ms", Date.now() - startedAt);
-
-          return semanticMatch.candidate.studySet.id;
-        }
+        return semanticMatch.candidate.studySet.id;
       }
     }
 

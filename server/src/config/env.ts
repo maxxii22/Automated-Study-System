@@ -35,6 +35,8 @@ const envSchema = z.object({
   SEMANTIC_CACHE_CANDIDATE_LIMIT: z.coerce.number().int().positive().max(100).default(20),
   SEMANTIC_CACHE_MIN_TEXT_LENGTH: z.coerce.number().int().positive().default(1200),
   SEMANTIC_CACHE_MIN_WORD_COUNT: z.coerce.number().int().positive().default(180),
+  SEMANTIC_CACHE_QUERY_MAX_CHUNKS: z.coerce.number().int().positive().max(8).default(2),
+  SEMANTIC_CACHE_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(1200),
   S3_BUCKET: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).default("us-east-1"),
   S3_ENDPOINT: z.string().url().optional(),

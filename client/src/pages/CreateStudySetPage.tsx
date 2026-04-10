@@ -25,6 +25,7 @@ import {
   saveStudySet,
   subscribeToStudyJob
 } from "../lib/api";
+import { writeCachedStudySet } from "../lib/studySetCache";
 import { CreateSourceOptionCard } from "./create/CreateSourceOptionCard";
 import { CreateStudySetPreview } from "./create/CreateStudySetPreview";
 import {
@@ -313,7 +314,12 @@ export function CreateStudySetPage() {
       const derivedTitle = deriveTitleFromContent(title, sourceUrl, sourceText, sourceFile);
       const combinedSourceText = sourceType === "text" ? [sourceUrl ? `Source URL: ${sourceUrl}` : "", sourceText].filter(Boolean).join("\n\n") : "";
       const savedStudySet = await saveStudySet({ sourceText: combinedSourceText, sourceType, sourceFileName: sourceFile?.name, ...result, title: derivedTitle });
-      navigate(`/study-sets/${savedStudySet.id}`);
+      writeCachedStudySet(savedStudySet);
+      navigate(`/study-sets/${savedStudySet.id}`, {
+        state: {
+          studySet: savedStudySet
+        }
+      });
     } catch (saveError) {
       setError(toUserFacingGenerationError(saveError instanceof Error ? saveError.message : "Could not save the study set."));
     } finally {

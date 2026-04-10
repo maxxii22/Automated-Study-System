@@ -594,7 +594,7 @@ async function generateStudyMaterialsWithGemini(payload: StudyGenerationInput): 
     url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     body: buildRequestBody(payload),
     action: "Gemini study generation request",
-    priority: "normal"
+    priority: "high"
   });
   const outputText = extractTextResponse(data);
   const parsedStudySet = studySetSchema.parse(JSON.parse(outputText) as unknown);
