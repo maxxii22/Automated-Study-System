@@ -4,6 +4,8 @@ import type { GenerateStudySetResponse, StudySet } from "@automated-study-system
 
 import { env } from "../config/env.js";
 import { fetchGeminiJson } from "./geminiApi.js";
+import { ensurePgVectorInfrastructure, isPgVectorReady, queryNearestDocumentIds } from "./pgVectorService.js";
+import { findSemanticCandidateDocuments, findSemanticCandidateDocumentsByIds } from "./studyJobRepository.js";
 
 type EmbeddingRecord = {
   chunkIndex: number;
@@ -18,6 +20,27 @@ type SemanticCandidate = {
   sourceType: "text" | "pdf";
   studySet: StudySet;
   embeddings: EmbeddingRecord[];
+};
+
+type SemanticMatchResult = {
+  similarity: number;
+  titleOverlap: number;
+  candidate: SemanticCandidate;
+};
+
+type EmbedTextChunksOptions = {
+  timeoutMs?: number;
+};
+
+type SemanticCacheLookupInput = {
+  ownerId: string;
+  title: string;
+  sourceType: "text" | "pdf";
+  sourceText: string;
+  excludedDocumentHash?: string;
+  candidateLimit?: number;
+  maxChunks?: number;
+  embeddingTimeoutMs?: number;
 };
 
 const TITLE_STOP_WORDS = new Set([
@@ -196,7 +219,7 @@ export function chunkSemanticText(text: string, targetLength = 1200) {
   return chunks.slice(0, env.GEMINI_EMBEDDING_MAX_CHUNKS);
 }
 
-export async function embedTextChunks(chunks: string[]) {
+export async function embedTextChunks(chunks: string[], options: EmbedTextChunksOptions = {}) {
   if (chunks.length === 0) {
     return [] as EmbeddingRecord[];
   }
@@ -215,7 +238,8 @@ export async function embedTextChunks(chunks: string[]) {
       }>({
         url: `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_EMBEDDING_MODEL}:embedContent?key=${apiKey}`,
         body: buildEmbedRequestPayload(chunk),
-        action: "Gemini embeddings request"
+        action: "Gemini embeddings request",
+        timeoutMs: options.timeoutMs
       });
 
       const values = extractEmbeddingValues(data.embedding?.values ?? data.embeddings?.[0]?.values);
@@ -239,15 +263,9 @@ export function findBestSemanticCandidate(input: {
   title: string;
   queryEmbeddings: EmbeddingRecord[];
   candidates: SemanticCandidate[];
-}) {
+}): SemanticMatchResult | null {
   const queryVector = averageEmbeddings(input.queryEmbeddings.map((item) => item.embedding));
-  let bestMatch:
-    | {
-        similarity: number;
-        titleOverlap: number;
-        candidate: SemanticCandidate;
-      }
-    | undefined;
+  let bestMatch: SemanticMatchResult | undefined;
 
   input.candidates.forEach((candidate) => {
     const candidateVector = averageEmbeddings(candidate.embeddings.map((item) => item.embedding));
@@ -280,14 +298,8 @@ export function selectSemanticMatch(input: {
     similarity: number;
     candidate: SemanticCandidate;
   }>;
-}) {
-  let bestMatch:
-    | {
-        similarity: number;
-        titleOverlap: number;
-        candidate: SemanticCandidate;
-      }
-    | undefined;
+}): SemanticMatchResult | null {
+  let bestMatch: SemanticMatchResult | undefined;
 
   input.candidates.forEach(({ similarity, candidate }) => {
     const overlap = titleOverlapScore(input.title, candidate.studySet.title);
@@ -310,4 +322,62 @@ export function selectSemanticMatch(input: {
     bestMatch.similarity >= threshold || (bestMatch.similarity >= threshold - 0.04 && bestMatch.titleOverlap >= 0.34);
 
   return passes ? bestMatch : null;
+}
+
+function buildSemanticLookupSourceText(title: string, sourceType: "text" | "pdf", sourceText: string) {
+  return [
+    `Title: ${title}`,
+    `Source type: ${sourceType}`,
+    `Core content: ${sourceText}`
+  ].join("\n");
+}
+
+export async function findSemanticCacheMatch(input: SemanticCacheLookupInput): Promise<SemanticMatchResult | null> {
+  if (!shouldRunSemanticCache(input.sourceText)) {
+    return null;
+  }
+
+  await ensurePgVectorInfrastructure();
+
+  const queryChunks = chunkSemanticText(buildSemanticLookupSourceText(input.title, input.sourceType, input.sourceText)).slice(
+    0,
+    input.maxChunks ?? env.SEMANTIC_CACHE_QUERY_MAX_CHUNKS
+  );
+
+  if (queryChunks.length === 0) {
+    return null;
+  }
+
+  const queryEmbeddings = await embedTextChunks(queryChunks, {
+    timeoutMs: input.embeddingTimeoutMs ?? env.SEMANTIC_CACHE_EMBEDDING_TIMEOUT_MS
+  });
+  const queryVector = averageEmbeddings(queryEmbeddings.map((item) => item.embedding));
+  const candidateLimit = input.candidateLimit ?? env.SEMANTIC_CACHE_CANDIDATE_LIMIT;
+
+  if (isPgVectorReady()) {
+    const rankedIds = await queryNearestDocumentIds(input.sourceType, input.ownerId, queryVector, candidateLimit);
+    const rankedCandidates = (await findSemanticCandidateDocumentsByIds(input.ownerId, rankedIds.map((item) => item.id))).filter(
+      (candidate) => candidate.hash !== input.excludedDocumentHash
+    );
+
+    return selectSemanticMatch({
+      title: input.title,
+      candidates: rankedCandidates
+        .map((candidate) => ({
+          similarity: rankedIds.find((item) => item.id === candidate.documentId)?.similarity ?? 0,
+          candidate
+        }))
+        .filter((item) => item.similarity > 0)
+    });
+  }
+
+  const candidates = (await findSemanticCandidateDocuments(input.ownerId, input.sourceType, candidateLimit)).filter(
+    (candidate) => candidate.hash !== input.excludedDocumentHash
+  );
+
+  return findBestSemanticCandidate({
+    title: input.title,
+    queryEmbeddings,
+    candidates
+  });
 }
