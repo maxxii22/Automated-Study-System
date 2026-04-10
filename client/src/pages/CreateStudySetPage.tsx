@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   createPdfStudyJob,
   createTextStudyJob,
+  fetchStudySet,
   fetchStudyJob,
   isStudyJobTerminal,
   saveStudySet,
@@ -47,6 +48,7 @@ export function CreateStudySetPage() {
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const lastTextPayloadRef = useRef<{ title: string; sourceText: string } | null>(null);
   const lastPdfTitleRef = useRef<string | null>(null);
+  const openedStudySetIdRef = useRef<string | null>(null);
   const [title, setTitle] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceText, setSourceText] = useState("");
@@ -75,6 +77,55 @@ export function CreateStudySetPage() {
     setIsSocketFallbackPolling(false);
     setIsRestoringJob(false);
   }, []);
+
+  const openStudySetPage = useCallback(
+    async (studySetId: string) => {
+      if (!studySetId || openedStudySetIdRef.current === studySetId) {
+        return;
+      }
+
+      openedStudySetIdRef.current = studySetId;
+      clearJobSubscription();
+      storeActiveJobId(null);
+      setIsSocketFallbackPolling(false);
+      setIsRestoringJob(false);
+
+      const retryDelaysMs = [0, 250, 800];
+      let preloadedStudySet = null;
+
+      for (const delayMs of retryDelaysMs) {
+        if (delayMs > 0) {
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, delayMs);
+          });
+        }
+
+        try {
+          const fetchedStudySet = await fetchStudySet(studySetId);
+          preloadedStudySet = fetchedStudySet;
+
+          if (fetchedStudySet.flashcards.length > 0 || fetchedStudySet.flashcardCount === 0) {
+            break;
+          }
+        } catch {
+          // Fall through to the next retry and let the destination page load live data if needed.
+        }
+      }
+
+      if (preloadedStudySet) {
+        writeCachedStudySet(preloadedStudySet);
+      }
+
+      navigate(`/study-sets/${studySetId}`, {
+        state: preloadedStudySet
+          ? {
+              studySet: preloadedStudySet
+            }
+          : undefined
+      });
+    },
+    [clearJobSubscription, navigate]
+  );
 
   const handleTextJobCompletion = useCallback((job: StudySetJob) => {
     storeActiveJobId(null);
@@ -113,9 +164,7 @@ export function CreateStudySetPage() {
             clearJobSubscription();
 
             if (event.job.sourceType === "pdf" && event.studySetId) {
-              storeActiveJobId(null);
-              setIsSocketFallbackPolling(false);
-              navigate(`/study-sets/${event.studySetId}`);
+              void openStudySetPage(event.studySetId);
               return;
             }
 
@@ -135,7 +184,7 @@ export function CreateStudySetPage() {
         }
       );
     },
-    [clearJobSubscription, handleJobFailure, handleTextJobCompletion, navigate]
+    [clearJobSubscription, handleJobFailure, handleTextJobCompletion, openStudySetPage]
   );
 
   useEffect(() => {
@@ -154,8 +203,7 @@ export function CreateStudySetPage() {
 
         if (response.job.status === "completed") {
           if (response.job.sourceType === "pdf" && response.job.studySetId) {
-            storeActiveJobId(null);
-            navigate(`/study-sets/${response.job.studySetId}`);
+            void openStudySetPage(response.job.studySetId);
             return;
           }
 
@@ -183,7 +231,7 @@ export function CreateStudySetPage() {
       ignore = true;
       clearJobSubscription();
     };
-  }, [clearJobState, clearJobSubscription, handleTextJobCompletion, navigate, subscribeToActiveJob]);
+  }, [clearJobState, clearJobSubscription, handleTextJobCompletion, openStudySetPage, subscribeToActiveJob]);
 
   useEffect(() => {
     if (!activeJob || isStudyJobTerminal(activeJob) || !isSocketFallbackPolling) return;
@@ -195,8 +243,7 @@ export function CreateStudySetPage() {
 
           if (response.job.status === "completed") {
             if (response.job.sourceType === "pdf" && response.job.studySetId) {
-              storeActiveJobId(null);
-              navigate(`/study-sets/${response.job.studySetId}`);
+              void openStudySetPage(response.job.studySetId);
               return;
             }
 
@@ -213,7 +260,7 @@ export function CreateStudySetPage() {
     }, 5000);
 
     return () => window.clearInterval(intervalId);
-  }, [activeJob, clearJobSubscription, handleJobFailure, handleTextJobCompletion, isSocketFallbackPolling, navigate]);
+  }, [activeJob, clearJobSubscription, handleJobFailure, handleTextJobCompletion, isSocketFallbackPolling, openStudySetPage]);
 
   useEffect(() => clearJobSubscription, [clearJobSubscription]);
 
@@ -350,8 +397,7 @@ export function CreateStudySetPage() {
         setResult(null);
         storeActiveJobId(created.job.id);
         if (created.job.status === "completed" && created.job.studySetId) {
-          storeActiveJobId(null);
-          navigate(`/study-sets/${created.job.studySetId}`);
+          void openStudySetPage(created.job.studySetId);
           return;
         }
         subscribeToActiveJob(created.job.id);
