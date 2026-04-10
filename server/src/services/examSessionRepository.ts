@@ -45,6 +45,15 @@ export async function listExamSessions(ownerId: string, studySetId: string) {
   return records.map(toExamSession);
 }
 
+export async function countExamSessions(ownerId: string, studySetId: string) {
+  return prisma.examSession.count({
+    where: {
+      ownerId,
+      studySetId
+    }
+  });
+}
+
 export async function getExamSession(ownerId: string, studySetId: string, sessionId: string) {
   const record = await prisma.examSession.findFirst({
     where: {

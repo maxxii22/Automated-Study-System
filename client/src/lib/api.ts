@@ -7,8 +7,6 @@ import type {
   EvaluateExamTurnResponse,
   ExamQuestion,
   ExamSession,
-  ExamSummary,
-  ExamTurnResult,
   Flashcard,
   GenerateStudySetResponse,
   GetStudyJobResponse,
@@ -302,6 +300,17 @@ export async function fetchExamSessions(studySetId: string): Promise<ExamSession
   return payload.items;
 }
 
+export async function fetchExamSessionCount(studySetId: string): Promise<number> {
+  const response = await authenticatedFetch(`${API_BASE_URL}/study-sets/${studySetId}/exam-sessions?summaryOnly=true`);
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response, "Could not load exam session count."));
+  }
+
+  const payload = (await response.json()) as { count: number };
+  return payload.count;
+}
+
 export async function fetchRescueAttempts(studySetId: string, examSessionId?: string): Promise<RescueAttempt[]> {
   const searchParams = new URLSearchParams();
 
@@ -437,33 +446,6 @@ export function createExamSession(studySet: StudySet, totalQuestionsTarget = 5):
   };
 }
 
-export function applyExamTurnResult(
-  session: ExamSession,
-  turnResult: ExamTurnResult,
-  nextQuestion: ExamQuestion | undefined,
-  mergedWeakTopics: string[],
-  shouldEnd: boolean
-): ExamSession {
-  const turns = [...session.turns, turnResult];
-  const cumulativeScore = turns.reduce((total, turn) => total + turn.score, 0);
-
-  const updated: ExamSession = {
-    ...session,
-    turns,
-    weakTopics: mergedWeakTopics,
-    cumulativeScore,
-    completed: shouldEnd,
-    currentQuestion: nextQuestion ?? session.currentQuestion
-  };
-
-  if (shouldEnd) {
-    updated.completedAt = new Date().toISOString();
-    updated.summary = buildExamSummary(updated);
-  }
-
-  return updated;
-}
-
 function buildStarterQuestion(studySet: StudySet): ExamQuestion {
   const firstFlashcard = [...studySet.flashcards].sort((left, right) => left.order - right.order)[0];
   const firstConcept = studySet.keyConcepts[0];
@@ -476,28 +458,6 @@ function buildStarterQuestion(studySet: StudySet): ExamQuestion {
         ? `Explain the concept of ${firstConcept} in the context of ${studySet.title}.`
         : `What is the most important idea in ${studySet.title}?`),
     focusTopic: firstConcept
-  };
-}
-
-function buildExamSummary(session: ExamSession): ExamSummary {
-  const averageScore =
-    session.turns.length > 0 ? Math.round(session.turns.reduce((total, turn) => total + turn.score, 0) / session.turns.length) : 0;
-  const topicCounts = new Map<string, number>();
-
-  session.turns.forEach((turn) => {
-    turn.weakTopics.forEach((topic) => {
-      topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
-    });
-  });
-
-  const sortedTopics = [...topicCounts.entries()].sort((left, right) => right[1] - left[1]).map(([topic]) => topic);
-  const strongestTurn = [...session.turns].sort((left, right) => right.score - left.score)[0];
-
-  return {
-    totalQuestions: session.turns.length,
-    averageScore,
-    weakTopics: sortedTopics,
-    strongestTopic: strongestTurn?.weakTopics[0] ? undefined : strongestTurn?.focusTopic
   };
 }
 

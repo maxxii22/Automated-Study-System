@@ -27,14 +27,12 @@ export async function listStudySetFlashcardsController(request: Request, respons
   const cursor = z.string().optional().parse(request.query.cursor);
   const limit = z.coerce.number().int().positive().max(25).optional().parse(request.query.limit);
 
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
-
-  if (!studySet) {
+  try {
+    const flashcards = await listFlashcards(request.authUser!.id, studySetId, cursor, limit);
+    return response.json(flashcards);
+  } catch {
     return response.status(404).json({ message: "Study set not found." });
   }
-
-  const flashcards = await listFlashcards(request.authUser!.id, studySetId, cursor, limit);
-  return response.json(flashcards);
 }
 
 export async function deleteStudySetController(request: Request, response: Response) {

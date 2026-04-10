@@ -6,7 +6,7 @@ import {
   listRescueAttemptsForStudySet,
   submitRescueRetryForAttempt
 } from "../services/rescueModeService.js";
-import { getStudySet } from "../services/studySetRepository.js";
+import { studySetExists } from "../services/studySetRepository.js";
 
 const createRescueAttemptSchema = z.object({
   examSessionId: z.string().min(1)
@@ -18,9 +18,8 @@ const submitRescueRetrySchema = z.object({
 
 export async function listRescueAttemptsController(request: Request, response: Response) {
   const studySetId = String(request.params.id);
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
 
-  if (!studySet) {
+  if (!(await studySetExists(request.authUser!.id, studySetId))) {
     return response.status(404).json({ message: "Study set not found." });
   }
 
@@ -31,12 +30,6 @@ export async function listRescueAttemptsController(request: Request, response: R
 
 export async function createRescueAttemptController(request: Request, response: Response) {
   const studySetId = String(request.params.id);
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
-
-  if (!studySet) {
-    return response.status(404).json({ message: "Study set not found." });
-  }
-
   const parsed = createRescueAttemptSchema.safeParse(request.body);
 
   if (!parsed.success) {
@@ -50,19 +43,17 @@ export async function createRescueAttemptController(request: Request, response: 
     const created = await createOrReuseRescueAttemptForSession(request.authUser!.id, studySetId, parsed.data.examSessionId);
     return response.status(201).json(created);
   } catch (error) {
-    return response.status(400).json({
-      message: error instanceof Error ? error.message : "Could not create rescue attempt."
+    const message = error instanceof Error ? error.message : "Could not create rescue attempt.";
+    const status = /study set not found|exam session not found/i.test(message) ? 404 : 400;
+
+    return response.status(status).json({
+      message
     });
   }
 }
 
 export async function submitRescueRetryController(request: Request, response: Response) {
   const studySetId = String(request.params.id);
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
-
-  if (!studySet) {
-    return response.status(404).json({ message: "Study set not found." });
-  }
 
   const parsed = submitRescueRetrySchema.safeParse(request.body);
 
@@ -82,8 +73,11 @@ export async function submitRescueRetryController(request: Request, response: Re
     );
     return response.json(result);
   } catch (error) {
-    return response.status(400).json({
-      message: error instanceof Error ? error.message : "Could not submit rescue retry."
+    const message = error instanceof Error ? error.message : "Could not submit rescue retry.";
+    const status = /study set not found|rescue attempt not found/i.test(message) ? 404 : 400;
+
+    return response.status(status).json({
+      message
     });
   }
 }

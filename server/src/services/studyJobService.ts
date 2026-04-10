@@ -155,21 +155,22 @@ export async function createPdfStudyJob(
   sourceFile: Express.Multer.File
 ): Promise<CreateStudyJobResponse> {
   const documentHash = hashBuffer(sourceFile.buffer);
-  const activeJob = await findActiveStudyJobByHash(ownerId, documentHash);
+  const [activeJob, completedOwnedJob, existingDocument] = await Promise.all([
+    findActiveStudyJobByHash(ownerId, documentHash),
+    findCompletedStudyJobByHash(ownerId, documentHash),
+    findDocumentByHash(documentHash)
+  ]);
 
   if (activeJob) {
     await cacheStudyJob(activeJob);
     return { job: activeJob };
   }
 
-  const completedOwnedJob = await findCompletedStudyJobByHash(ownerId, documentHash);
-
   if (completedOwnedJob?.studySetId) {
     await cacheStudyJob(completedOwnedJob);
     return { job: completedOwnedJob };
   }
 
-  const existingDocument = await findDocumentByHash(documentHash);
   const cachedStudySetId = (await getCachedStudySetIdForHash(documentHash)) ?? existingDocument?.studySetId ?? null;
 
   if (cachedStudySetId) {
@@ -220,18 +221,13 @@ export async function createPdfStudyJob(
     mimeType: sourceFile.mimetype
   });
 
-  await upsertDocumentRecord({
+  const document = await upsertDocumentRecord({
     hash: documentHash,
     sourceFileName: sourceFile.originalname,
     sourceObjectKey: storedObject.objectKey,
     mimeType: sourceFile.mimetype,
     byteSize: sourceFile.size
   });
-  const document = await findDocumentByHash(documentHash);
-
-  if (!document) {
-    throw new Error("Stored document metadata could not be loaded.");
-  }
 
   await ensureDocumentOwner(document.id, ownerId);
 
@@ -275,21 +271,22 @@ export async function createTextStudyJob(
 ): Promise<CreateStudyJobResponse> {
   const normalizedSourceText = normalizeSemanticText(payload.sourceText);
   const documentHash = buildTextDocumentHash(ownerId, normalizedSourceText);
-  const activeJob = await findActiveStudyJobByHash(ownerId, documentHash);
+  const [activeJob, completedOwnedJob, exactDocument, existingDocument] = await Promise.all([
+    findActiveStudyJobByHash(ownerId, documentHash),
+    findCompletedStudyJobByHash(ownerId, documentHash),
+    findDocumentByHashForOwner(ownerId, documentHash),
+    findDocumentByHash(documentHash)
+  ]);
 
   if (activeJob) {
     await cacheStudyJob(activeJob);
     return { job: activeJob };
   }
 
-  const completedOwnedJob = await findCompletedStudyJobByHash(ownerId, documentHash);
-
   if (completedOwnedJob?.generatedStudySet) {
     await cacheStudyJob(completedOwnedJob);
     return { job: completedOwnedJob };
   }
-
-  const exactDocument = await findDocumentByHashForOwner(ownerId, documentHash);
 
   if (exactDocument?.studySetId) {
     const cachedStudySet = await findStudySet(exactDocument.studySetId);
@@ -311,23 +308,16 @@ export async function createTextStudyJob(
   }
 
   const sourceObjectKey = `inline:text:${documentHash}`;
-  const existingDocument = await findDocumentByHash(documentHash);
-
-  if (!existingDocument) {
-    await upsertDocumentRecord({
-      hash: documentHash,
-      sourceObjectKey,
-      mimeType: "text/plain",
-      byteSize: Buffer.byteLength(normalizedSourceText, "utf8"),
-      extractedText: normalizedSourceText
-    });
-  }
-
-  const document = await findDocumentByHash(documentHash);
-
-  if (!document) {
-    throw new Error("Text document metadata could not be created.");
-  }
+  const document =
+    existingDocument?.extractedText?.trim()
+      ? existingDocument
+      : await upsertDocumentRecord({
+          hash: documentHash,
+          sourceObjectKey,
+          mimeType: "text/plain",
+          byteSize: Buffer.byteLength(normalizedSourceText, "utf8"),
+          extractedText: normalizedSourceText
+        });
 
   await ensureDocumentOwner(document.id, ownerId);
 

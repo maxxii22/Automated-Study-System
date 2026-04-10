@@ -1,13 +1,28 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-  EvaluateExamTurnRequest as PublicEvaluateExamTurnRequest,
-  EvaluateExamTurnResponse,
+  ExamEvaluationOutcome,
   ExamQuestion,
   StudySet
 } from "@automated-study-system/shared";
 
-type EvaluateExamTurnInput = Omit<PublicEvaluateExamTurnRequest, "studySetId"> & {
+type EvaluateExamTurnInput = {
+  currentQuestion: ExamQuestion;
+  userAnswer: string;
+  turns: Array<{
+    questionId: string;
+    question: string;
+    focusTopic?: string;
+    userAnswer: string;
+    idealAnswer: string;
+    feedback: string;
+    score: number;
+    classification: "strong" | "partial" | "weak";
+    weakTopics: string[];
+    createdAt: string;
+  }>;
+  weakTopics: string[];
+  totalQuestionsTarget?: number;
   studySet: StudySet;
 };
 
@@ -195,7 +210,7 @@ function buildNextQuestion(payload: EvaluateExamTurnInput, classification: "stro
   };
 }
 
-export function evaluateExamTurnLocally(payload: EvaluateExamTurnInput): EvaluateExamTurnResponse {
+export function evaluateExamTurnLocally(payload: EvaluateExamTurnInput): ExamEvaluationOutcome {
   const answerTokens = uniqueTokens(payload.userAnswer);
   const referenceTokens = uniqueTokens(buildReferenceContext(payload.studySet, payload.currentQuestion));
   const matchingTokens = answerTokens.filter((token) => referenceTokens.includes(token));

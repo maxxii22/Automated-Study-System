@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
-import { getStudySet } from "../services/studySetRepository.js";
-import { listExamSessions, upsertExamSession } from "../services/examSessionRepository.js";
+import { countExamSessions, listExamSessions, upsertExamSession } from "../services/examSessionRepository.js";
+import { studySetExists } from "../services/studySetRepository.js";
 
 const examQuestionSchema = z.object({
   id: z.string().min(1),
@@ -46,10 +46,19 @@ const examSessionSchema = z.object({
 
 export async function listExamSessionsController(request: Request, response: Response) {
   const studySetId = String(request.params.id);
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
+  const summaryOnly = z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true")
+    .parse(request.query.summaryOnly);
 
-  if (!studySet) {
+  if (!(await studySetExists(request.authUser!.id, studySetId))) {
     return response.status(404).json({ message: "Study set not found." });
+  }
+
+  if (summaryOnly) {
+    const count = await countExamSessions(request.authUser!.id, studySetId);
+    return response.json({ count });
   }
 
   const items = await listExamSessions(request.authUser!.id, studySetId);
@@ -59,9 +68,8 @@ export async function listExamSessionsController(request: Request, response: Res
 export async function saveExamSessionController(request: Request, response: Response) {
   const studySetId = String(request.params.id);
   const sessionId = String(request.params.sessionId);
-  const studySet = await getStudySet(request.authUser!.id, studySetId);
 
-  if (!studySet) {
+  if (!(await studySetExists(request.authUser!.id, studySetId))) {
     return response.status(404).json({ message: "Study set not found." });
   }
 

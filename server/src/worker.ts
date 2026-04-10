@@ -277,12 +277,6 @@ const worker = new Worker(
     });
 
     await attachDocumentToStudySet(documentHash, createdStudySet.id);
-    await indexStudySetForSemanticCache(createdStudySet, {
-      ownerId,
-      documentHash,
-      sourceFileName: fileName,
-      extractedText
-    });
     await cacheStudySetIdForHash(documentHash, createdStudySet.id);
 
     const completedJob = await updateStudyJob(ownerId, jobId, {
@@ -305,6 +299,19 @@ const worker = new Worker(
 
     await incrementMetric("study_jobs_completed_total");
     await observeDurationMetric("study_job_processing_duration_ms", Date.now() - startedAt);
+
+    void indexStudySetForSemanticCache(createdStudySet, {
+      ownerId,
+      documentHash,
+      sourceFileName: fileName,
+      extractedText
+    }).catch((error) => {
+      logError("Deferred semantic indexing failed for generated PDF study set", {
+        studySetId: createdStudySet.id,
+        jobId,
+        error: error instanceof Error ? error.message : "Unknown semantic indexing error"
+      });
+    });
 
     return createdStudySet.id;
   },

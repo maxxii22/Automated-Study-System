@@ -193,7 +193,7 @@ export function chunkSemanticText(text: string, targetLength = 1200) {
     chunks.push(currentChunk.trim());
   }
 
-  return chunks.slice(0, 8);
+  return chunks.slice(0, env.GEMINI_EMBEDDING_MAX_CHUNKS);
 }
 
 export async function embedTextChunks(chunks: string[]) {

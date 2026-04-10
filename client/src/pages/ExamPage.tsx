@@ -29,7 +29,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  applyExamTurnResult,
   createRescueAttempt,
   createExamSession,
   evaluateExamTurn,
@@ -241,16 +240,19 @@ export function ExamPage() {
   }, [id, rescueQueryParam]);
 
   async function loadExamPage() {
-    const loadedStudySet = await fetchStudySet(id);
+    const [loadedStudySet, sessionsResult] = await Promise.all([
+      fetchStudySet(id),
+      withTimeout(fetchExamSessions(id), 4000, "Exam history took too long to respond.").catch(() => null)
+    ]);
     let sessions: ExamSession[] = [];
     const noticeParts: string[] = [];
 
     writeCachedStudySet(loadedStudySet);
     setStudySet(loadedStudySet);
 
-    try {
-      sessions = await withTimeout(fetchExamSessions(id), 4000, "Exam history took too long to respond.");
-    } catch {
+    if (sessionsResult) {
+      sessions = sessionsResult;
+    } else {
       noticeParts.push("Exam history is temporarily unavailable. A fresh session has been prepared.");
     }
 
@@ -433,38 +435,27 @@ export function ExamPage() {
     try {
       const response = await evaluateExamTurn({
         studySetId: studySet.id,
+        sessionId: session.id,
+        sessionStartedAt: session.startedAt,
         currentQuestion: session.currentQuestion,
         userAnswer: answer.trim(),
         turns: session.turns,
         weakTopics: session.weakTopics,
         totalQuestionsTarget: session.totalQuestionsTarget
       });
-
-      const shouldEnd =
-        response.shouldEnd || session.turns.length + 1 >= session.totalQuestionsTarget || !response.nextQuestion;
-
-      const updatedSession = applyExamTurnResult(
-        session,
-        response.result,
-        response.nextQuestion,
-        response.weakTopics,
-        shouldEnd
-      );
-
-      const savedSession = await saveExamSession(studySet.id, updatedSession);
-      setSession(savedSession);
-      setHistory((current) => [savedSession, ...current.filter((item) => item.id !== savedSession.id)]);
+      setSession(response.session);
+      setHistory((current) => [response.session, ...current.filter((item) => item.id !== response.session.id)]);
       setAnswer("");
       setRecordingHint("Use the microphone to record your oral answer, then submit it for scoring.");
 
-      if (isRescueModeEnabled && !shouldEnd && shouldTriggerRescue(response.result.classification, response.result.score)) {
+      if (isRescueModeEnabled && !response.session.completed && shouldTriggerRescue(response.result.classification, response.result.score)) {
         setIsLoadingRescue(true);
         setActiveRescue(null);
         setRescueAnswer("");
         setRescueError(null);
 
         try {
-          const rescueAttempt = await createRescueAttempt(studySet.id, savedSession.id);
+          const rescueAttempt = await createRescueAttempt(studySet.id, response.session.id);
           setActiveRescue(rescueAttempt);
         } catch (rescueCreateError) {
           setRescueError(rescueCreateError instanceof Error ? rescueCreateError.message : "Could not start Rescue Mode.");

@@ -28,6 +28,8 @@ model StudySet {
   rescueAttempts RescueAttempt[]
 
   @@index([createdAt(sort: Desc)])
+  @@index([ownerId, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([ownerId, id])
 }
 
 model Flashcard {
@@ -42,6 +44,7 @@ model Flashcard {
   studySet   StudySet @relation(fields: [studySetId], references: [id], onDelete: Cascade)
 
   @@index([studySetId, order])
+  @@index([studySetId, order, id])
 }
 
 model StudyJob {
@@ -70,6 +73,8 @@ model StudyJob {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([documentHash, createdAt(sort: Desc)])
+  @@index([ownerId, status, createdAt(sort: Desc)])
+  @@index([ownerId, documentHash, createdAt(sort: Desc)])
 }
 
 model Document {
@@ -136,6 +141,7 @@ model ExamSession {
 
   @@index([studySetId, updatedAt(sort: Desc)])
   @@index([studySetId, completed, updatedAt(sort: Desc)])
+  @@index([ownerId, studySetId, completedAt(sort: Desc), startedAt(sort: Desc)])
 }
 
 model RescueAttempt {
@@ -166,5 +172,6 @@ model RescueAttempt {
 
   @@index([studySetId, createdAt(sort: Desc)])
   @@index([ownerId, status, createdAt(sort: Desc)])
+  @@index([ownerId, studySetId, examSessionId, createdAt(sort: Desc)])
   @@unique([examSessionId, sourceQuestionId])
 }
