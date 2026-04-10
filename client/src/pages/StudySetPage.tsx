@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
-  fetchExamSessions,
+  fetchExamSessionCount,
   fetchRescueAttempts,
   fetchStudySet,
   fetchStudySetFlashcards,
@@ -505,17 +505,25 @@ export function StudySetPage() {
 
   async function loadStudySetPage() {
     setIsLoadingExamSessions(true);
-    const data = await fetchStudySet(id);
+    const [studySetResult, examCountResult, rescuesResult] = await Promise.allSettled([
+      fetchStudySet(id),
+      fetchExamSessionCount(id),
+      fetchRescueAttempts(id)
+    ]);
+
+    if (studySetResult.status === "rejected") {
+      throw studySetResult.reason;
+    }
+
+    const data = studySetResult.value;
     const hydratedData = await hydrateFlashcards(data);
 
     commitStudySet(hydratedData.studySet, hydratedData.flashcardCursor, hydratedData.hasMoreFlashcards);
 
-    const [sessionsResult, rescuesResult] = await Promise.allSettled([fetchExamSessions(id), fetchRescueAttempts(id)]);
-    const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : [];
     const rescues = rescuesResult.status === "fulfilled" ? rescuesResult.value : [];
     const noticeParts: string[] = [];
 
-    if (sessionsResult.status === "rejected") {
+    if (examCountResult.status === "rejected") {
       noticeParts.push("Exam history could not be refreshed right now.");
     }
 
@@ -523,7 +531,7 @@ export function StudySetPage() {
       noticeParts.push("Rescue history is temporarily unavailable.");
     }
 
-    setExamSessionCount(sessions.length);
+    setExamSessionCount(examCountResult.status === "fulfilled" ? examCountResult.value : 0);
     setRescueAttempts(rescues);
     setIsLoadingExamSessions(false);
     setPageNotice(noticeParts.length > 0 ? noticeParts.join(" ") : null);

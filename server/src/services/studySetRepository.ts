@@ -9,6 +9,19 @@ import type {
 
 import { prisma } from "../lib/prisma.js";
 
+const MAX_PAGE_SIZE = 25;
+const EXAM_CONTEXT_FLASHCARD_LIMIT = 6;
+
+type StudySetListCursor = {
+  id: string;
+  updatedAt: string;
+};
+
+type FlashcardListCursor = {
+  id: string;
+  order: number;
+};
+
 function toFlashcard(record: { id: string; question: string; answer: string; order: number }): Flashcard {
   return {
     id: record.id,
@@ -74,6 +87,109 @@ function toStudySetListItem(record: {
   };
 }
 
+function encodeCursor(value: StudySetListCursor | FlashcardListCursor) {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function decodeCursor<T>(cursor: string | undefined): T | null {
+  if (!cursor) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveStudySetCursor(ownerId: string, cursor?: string) {
+  const parsedCursor = decodeCursor<StudySetListCursor>(cursor);
+
+  if (parsedCursor?.id && parsedCursor.updatedAt) {
+    return {
+      id: parsedCursor.id,
+      updatedAt: new Date(parsedCursor.updatedAt)
+    };
+  }
+
+  if (!cursor) {
+    return null;
+  }
+
+  const record = await prisma.studySet.findFirst({
+    where: {
+      id: cursor,
+      ownerId
+    },
+    select: {
+      id: true,
+      updatedAt: true
+    }
+  });
+
+  return record ?? null;
+}
+
+async function resolveFlashcardCursor(studySetId: string, cursor?: string) {
+  const parsedCursor = decodeCursor<FlashcardListCursor>(cursor);
+
+  if (parsedCursor?.id && Number.isFinite(parsedCursor.order)) {
+    return parsedCursor;
+  }
+
+  if (!cursor) {
+    return null;
+  }
+
+  const record = await prisma.flashcard.findFirst({
+    where: {
+      id: cursor,
+      studySetId
+    },
+    select: {
+      id: true,
+      order: true
+    }
+  });
+
+  return record ?? null;
+}
+
+function toExamContext(record: {
+  id: string;
+  title: string;
+  sourceText: string;
+  sourceType: string;
+  sourceFileName: string | null;
+  summary: string;
+  studyGuide: string;
+  keyConcepts: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  flashcards: Array<{ question: string; answer: string; order: number }>;
+}): StudySet {
+  return {
+    id: record.id,
+    title: record.title,
+    sourceText: record.sourceText,
+    sourceType: record.sourceType as "text" | "pdf",
+    sourceFileName: record.sourceFileName ?? undefined,
+    summary: record.summary,
+    studyGuide: record.studyGuide,
+    keyConcepts: record.keyConcepts,
+    flashcards: record.flashcards.map((card, index) => ({
+      id: `exam-context-${index}`,
+      question: card.question,
+      answer: card.answer,
+      order: card.order
+    })),
+    flashcardCount: record.flashcards.length,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString()
+  };
+}
+
 export async function createStudySet(payload: {
   ownerId: string;
   title: string;
@@ -115,14 +231,30 @@ export async function createStudySet(payload: {
 }
 
 export async function listStudySets(ownerId: string, cursor?: string, limit = 10): Promise<PaginatedStudySetsResponse> {
-  const take = Math.min(Math.max(limit, 1), 25);
+  const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
+  const resolvedCursor = await resolveStudySetCursor(ownerId, cursor);
   const records = await prisma.studySet.findMany({
     where: {
-      ownerId
+      ownerId,
+      ...(resolvedCursor
+        ? {
+            OR: [
+              {
+                updatedAt: {
+                  lt: resolvedCursor.updatedAt
+                }
+              },
+              {
+                updatedAt: resolvedCursor.updatedAt,
+                id: {
+                  lt: resolvedCursor.id
+                }
+              }
+            ]
+          }
+        : {})
     },
     take: take + 1,
-    skip: cursor ? 1 : 0,
-    cursor: cursor ? { id: cursor } : undefined,
     orderBy: [
       { updatedAt: "desc" },
       { id: "desc" }
@@ -150,7 +282,12 @@ export async function listStudySets(ownerId: string, cursor?: string, limit = 10
     items,
     page: {
       hasMore,
-      nextCursor: hasMore ? items.at(-1)?.id : undefined
+      nextCursor: hasMore
+        ? encodeCursor({
+            id: records[take - 1].id,
+            updatedAt: records[take - 1].updatedAt.toISOString()
+          })
+        : undefined
     }
   };
 }
@@ -175,6 +312,52 @@ export async function getStudySet(ownerId: string, id: string) {
   return record ? toStudySet(record) : null;
 }
 
+export async function studySetExists(ownerId: string, id: string) {
+  const record = await prisma.studySet.findFirst({
+    where: {
+      id,
+      ownerId
+    },
+    select: {
+      id: true
+    }
+  });
+
+  return Boolean(record);
+}
+
+export async function getStudySetEvaluationContext(ownerId: string, id: string) {
+  const record = await prisma.studySet.findFirst({
+    where: {
+      id,
+      ownerId
+    },
+    select: {
+      id: true,
+      title: true,
+      sourceText: true,
+      sourceType: true,
+      sourceFileName: true,
+      summary: true,
+      studyGuide: true,
+      keyConcepts: true,
+      createdAt: true,
+      updatedAt: true,
+      flashcards: {
+        orderBy: { order: "asc" },
+        take: EXAM_CONTEXT_FLASHCARD_LIMIT,
+        select: {
+          question: true,
+          answer: true,
+          order: true
+        }
+      }
+    }
+  });
+
+  return record ? toExamContext(record) : null;
+}
+
 export async function deleteStudySet(ownerId: string, id: string) {
   const deleted = await prisma.studySet.deleteMany({
     where: {
@@ -189,24 +372,34 @@ export async function deleteStudySet(ownerId: string, id: string) {
 }
 
 export async function listFlashcards(ownerId: string, studySetId: string, cursor?: string, limit = 10): Promise<PaginatedFlashcardsResponse> {
-  const studySet = await prisma.studySet.findFirst({
-    where: {
-      id: studySetId,
-      ownerId
-    },
-    select: { id: true }
-  });
-
-  if (!studySet) {
+  if (!(await studySetExists(ownerId, studySetId))) {
     throw new Error("Study set not found.");
   }
 
-  const take = Math.min(Math.max(limit, 1), 25);
+  const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
+  const resolvedCursor = await resolveFlashcardCursor(studySetId, cursor);
   const records = await prisma.flashcard.findMany({
-    where: { studySetId },
+    where: {
+      studySetId,
+      ...(resolvedCursor
+        ? {
+            OR: [
+              {
+                order: {
+                  gt: resolvedCursor.order
+                }
+              },
+              {
+                order: resolvedCursor.order,
+                id: {
+                  gt: resolvedCursor.id
+                }
+              }
+            ]
+          }
+        : {})
+    },
     take: take + 1,
-    skip: cursor ? 1 : 0,
-    cursor: cursor ? { id: cursor } : undefined,
     orderBy: [
       { order: "asc" },
       { id: "asc" }
@@ -220,7 +413,12 @@ export async function listFlashcards(ownerId: string, studySetId: string, cursor
     items,
     page: {
       hasMore,
-      nextCursor: hasMore ? items.at(-1)?.id : undefined
+      nextCursor: hasMore
+        ? encodeCursor({
+            id: records[take - 1].id,
+            order: records[take - 1].order
+          })
+        : undefined
     }
   };
 }

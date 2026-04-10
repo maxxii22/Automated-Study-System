@@ -261,6 +261,8 @@ export type DocumentCacheRecord = {
 
 export type EvaluateExamTurnRequest = {
   studySetId: string;
+  sessionId: string;
+  sessionStartedAt: string;
   currentQuestion: ExamQuestion;
   userAnswer: string;
   turns: ExamTurnResult[];
@@ -268,9 +270,13 @@ export type EvaluateExamTurnRequest = {
   totalQuestionsTarget?: number;
 };
 
-export type EvaluateExamTurnResponse = {
+export type ExamEvaluationOutcome = {
   result: ExamTurnResult;
   nextQuestion?: ExamQuestion;
   weakTopics: string[];
   shouldEnd: boolean;
+};
+
+export type EvaluateExamTurnResponse = ExamEvaluationOutcome & {
+  session: ExamSession;
 };

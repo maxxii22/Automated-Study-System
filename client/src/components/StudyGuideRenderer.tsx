@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -78,10 +78,10 @@ function normalizeGuidePoints(paragraphs: string[]): string[] {
   );
 }
 
-export function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendererProps) {
-  const sections = splitStudyGuide(content);
+export const StudyGuideRenderer = memo(function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendererProps) {
+  const sections = useMemo(() => splitStudyGuide(content), [content]);
   const normalizedConcept = activeConcept?.trim().toLowerCase() ?? "";
-  const conceptTokens = activeConcept ? tokenizeConcept(activeConcept) : [];
+  const conceptTokens = useMemo(() => (activeConcept ? tokenizeConcept(activeConcept) : []), [activeConcept]);
   const filteredSections = useMemo(
     () =>
       normalizedConcept.length > 0
@@ -226,4 +226,4 @@ export function StudyGuideRenderer({ content, activeConcept }: StudyGuideRendere
       })}
     </div>
   );
-}
+});

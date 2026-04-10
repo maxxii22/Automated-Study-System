@@ -1,4 +1,10 @@
-import type { CreateRescueAttemptResponse, ListRescueAttemptsResponse, SubmitRescueRetryResponse } from "@automated-study-system/shared";
+import type {
+  CreateRescueAttemptResponse,
+  ExamSession,
+  ExamTurnResult,
+  ListRescueAttemptsResponse,
+  SubmitRescueRetryResponse
+} from "@automated-study-system/shared";
 
 import { getExamSession } from "./examSessionRepository.js";
 import { evaluateRescueRetry, generateRescueAttempt as generateRescueAttemptPayload } from "./geminiService.js";
@@ -9,7 +15,7 @@ import {
   listRescueAttempts,
   saveRescueAttemptRetry
 } from "./rescueAttemptRepository.js";
-import { getStudySet } from "./studySetRepository.js";
+import { getStudySetEvaluationContext } from "./studySetRepository.js";
 
 function isEligibleForRescue(classification: string, score: number) {
   return classification === "weak" || (classification === "partial" && score < 60);
@@ -30,7 +36,7 @@ export async function createOrReuseRescueAttemptForSession(
   examSessionId: string
 ): Promise<CreateRescueAttemptResponse> {
   const [studySet, session] = await Promise.all([
-    getStudySet(ownerId, studySetId),
+    getStudySetEvaluationContext(ownerId, studySetId),
     getExamSession(ownerId, studySetId, examSessionId)
   ]);
 
@@ -52,25 +58,46 @@ export async function createOrReuseRescueAttemptForSession(
     throw new Error("Rescue Mode is only available after a weak or low partial answer.");
   }
 
-  const existing = await findExistingRescueAttempt(ownerId, studySetId, examSessionId, latestTurn.questionId);
+  return createOrReuseRescueAttemptFromContext({
+    ownerId,
+    studySetId,
+    studySet,
+    session,
+    latestTurn
+  });
+}
+
+export async function createOrReuseRescueAttemptFromContext(payload: {
+  ownerId: string;
+  studySetId: string;
+  studySet: NonNullable<Awaited<ReturnType<typeof getStudySetEvaluationContext>>>;
+  session: ExamSession;
+  latestTurn: ExamTurnResult;
+}): Promise<CreateRescueAttemptResponse> {
+  const existing = await findExistingRescueAttempt(
+    payload.ownerId,
+    payload.studySetId,
+    payload.session.id,
+    payload.latestTurn.questionId
+  );
 
   if (existing) {
     return { attempt: existing };
   }
 
   const generated = await generateRescueAttemptPayload({
-    studySet,
-    session,
-    latestTurn
+    studySet: payload.studySet,
+    session: payload.session,
+    latestTurn: payload.latestTurn
   });
 
   const attempt = await createRescueAttempt({
-    ownerId,
-    studySetId,
-    examSessionId,
-    sourceQuestionId: latestTurn.questionId,
-    sourceQuestion: latestTurn.question,
-    sourceAnswer: latestTurn.userAnswer,
+    ownerId: payload.ownerId,
+    studySetId: payload.studySetId,
+    examSessionId: payload.session.id,
+    sourceQuestionId: payload.latestTurn.questionId,
+    sourceQuestion: payload.latestTurn.question,
+    sourceAnswer: payload.latestTurn.userAnswer,
     concept: generated.concept,
     diagnosis: generated.diagnosis,
     microLesson: generated.microLesson,
@@ -94,7 +121,7 @@ export async function submitRescueRetryForAttempt(
     throw new Error("Rescue attempt not found.");
   }
 
-  const studySet = await getStudySet(ownerId, studySetId);
+  const studySet = await getStudySetEvaluationContext(ownerId, studySetId);
 
   if (!studySet) {
     throw new Error("Study set not found.");

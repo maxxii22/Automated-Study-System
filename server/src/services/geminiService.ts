@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
+  ExamEvaluationOutcome,
   ExamQuestion,
   ExamSession,
   ExamTurnResult,
-  EvaluateExamTurnRequest as PublicEvaluateExamTurnRequest,
-  EvaluateExamTurnResponse,
   GenerateStudySetResponse,
   StudySet
 } from "@automated-study-system/shared";
@@ -41,7 +40,12 @@ type AudioTranscriptionInput = {
   };
 };
 
-type EvaluateExamTurnInput = Omit<PublicEvaluateExamTurnRequest, "studySetId"> & {
+type EvaluateExamTurnInput = {
+  currentQuestion: ExamQuestion;
+  userAnswer: string;
+  turns: ExamTurnResult[];
+  weakTopics: string[];
+  totalQuestionsTarget?: number;
   studySet: StudySet;
 };
 
@@ -100,6 +104,13 @@ const rescueRetryEvaluationSchema = z.object({
 
 type GeminiTaskModel = "text" | "multimodal" | "exam" | "rescue";
 
+const MAX_GENERATION_SOURCE_CHARS = 24000;
+const MAX_GENERATION_SUMMARY_CHARS = 320;
+const MAX_EXAM_SUMMARY_CHARS = 220;
+const MAX_EXAM_FLASHCARDS = 3;
+const MAX_RESCUE_GUIDE_CHARS = 700;
+const MAX_RESCUE_SOURCE_CHARS = 320;
+
 function getGeminiConfig(task: GeminiTaskModel = "text") {
   const apiKey = env.GEMINI_API_KEY;
   const defaultModel = env.GEMINI_MODEL;
@@ -138,6 +149,8 @@ function buildInstructionText(title: string, sourceKind: "text" | "pdf") {
 }
 
 function buildTextParts(payload: TextInput) {
+  const preparedSourceText = compressGenerationSourceText(payload.sourceText);
+
   return [
     {
       text: [
@@ -152,7 +165,30 @@ function buildTextParts(payload: TextInput) {
         "- flashcards: 8-12 items",
         "",
         "Source notes:",
-        payload.sourceText
+        preparedSourceText
+      ].join("\n")
+    }
+  ];
+}
+
+function buildPdfTextParts(payload: PdfInput) {
+  return [
+    {
+      text: [
+        `Title: ${payload.title}`,
+        `Original filename: ${payload.pdfFile.fileName}`,
+        "Task: Generate a study pack from the extracted PDF text.",
+        "Requirements:",
+        "- summary: 2-4 sentences",
+        "- studyGuide: a compact structured guide as a numbered outline",
+        "- each numbered section must be on its own line with a short heading and 2-4 supporting lines",
+        "- separate sections with blank lines",
+        "- keyConcepts: 3-8 short items",
+        "- flashcards: 8-12 items",
+        "- ground every output in the extracted document text",
+        "",
+        "Extracted PDF text:",
+        compressGenerationSourceText(payload.extractedText ?? "")
       ].join("\n")
     }
   ];
@@ -222,6 +258,37 @@ function stripJsonCodeFence(text: string) {
   }
 
   return trimmed;
+}
+
+function compressGenerationSourceText(text: string) {
+  const normalized = normalizePromptWhitespace(text);
+
+  if (normalized.length <= MAX_GENERATION_SOURCE_CHARS) {
+    return normalized;
+  }
+
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    return truncateForPrompt(normalized, MAX_GENERATION_SOURCE_CHARS);
+  }
+
+  const segments = [
+    paragraphs.slice(0, 8).join("\n\n"),
+    paragraphs.slice(Math.max(0, Math.floor(paragraphs.length / 2) - 3), Math.max(0, Math.floor(paragraphs.length / 2) + 3)).join("\n\n"),
+    paragraphs.slice(-6).join("\n\n")
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+
+  return truncateForPrompt(segments, MAX_GENERATION_SOURCE_CHARS);
+}
+
+function normalizePromptWhitespace(text: string) {
+  return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function parseStructuredResponse<T>(text: string, schema: z.ZodType<T>) {
@@ -334,11 +401,14 @@ function buildExamEvaluationUserPrompt(payload: EvaluateExamTurnInput) {
 
   return [
     `Study set title: ${payload.studySet.title}`,
-    `Summary: ${payload.studySet.summary}`,
+    `Summary: ${truncateForPrompt(payload.studySet.summary, MAX_EXAM_SUMMARY_CHARS)}`,
     `Focused study guide excerpt: ${compactStudyGuide}`,
-    `Key concepts: ${payload.studySet.keyConcepts.join(", ")}`,
+    `Key concepts: ${payload.studySet.keyConcepts.slice(0, 5).join(", ")}`,
     `Source support excerpt: ${compactSourceText}`,
-    `Flashcards: ${compactFlashcards.map((card) => `Q: ${card.question} A: ${card.answer}`).join(" | ")}`,
+    `Flashcards: ${compactFlashcards
+      .slice(0, MAX_EXAM_FLASHCARDS)
+      .map((card) => `Q: ${truncateForPrompt(card.question, 110)} A: ${truncateForPrompt(card.answer, 150)}`)
+      .join(" | ")}`,
     `Current question: ${payload.currentQuestion.prompt}`,
     `Current focus topic: ${payload.currentQuestion.focusTopic ?? "none"}`,
     `User answer: ${payload.userAnswer}`,
@@ -371,10 +441,10 @@ function buildRescueUserPrompt(payload: {
 }) {
   return [
     `Study set title: ${payload.studySet.title}`,
-    `Summary: ${payload.studySet.summary}`,
-    `Study guide: ${truncateForPrompt(payload.studySet.studyGuide, 1000)}`,
+    `Summary: ${truncateForPrompt(payload.studySet.summary, MAX_GENERATION_SUMMARY_CHARS)}`,
+    `Study guide: ${truncateForPrompt(payload.studySet.studyGuide, MAX_RESCUE_GUIDE_CHARS)}`,
     `Key concepts: ${payload.studySet.keyConcepts.join(", ")}`,
-    `Source text: ${truncateForPrompt(payload.studySet.sourceText || "No source text available.", 700)}`,
+    `Source text: ${truncateForPrompt(payload.studySet.sourceText || "No source text available.", MAX_RESCUE_SOURCE_CHARS)}`,
     `Current weak topics: ${payload.session.weakTopics.join(", ") || "none"}`,
     `Original exam question: ${payload.latestTurn.question}`,
     `User answer: ${payload.latestTurn.userAnswer}`,
@@ -423,6 +493,8 @@ function buildRescueRetryUserPrompt(payload: {
 }
 
 function buildRequestBody(payload: StudyGenerationInput) {
+  const useExtractedTextForPdf = payload.sourceType === "pdf" && Boolean(payload.extractedText?.trim());
+
   return {
     systemInstruction: {
       parts: [
@@ -434,7 +506,12 @@ function buildRequestBody(payload: StudyGenerationInput) {
     contents: [
       {
         role: "user",
-        parts: payload.sourceType === "pdf" ? buildPdfParts(payload) : buildTextParts(payload)
+        parts:
+          payload.sourceType === "pdf"
+            ? useExtractedTextForPdf
+              ? buildPdfTextParts(payload)
+              : buildPdfParts(payload)
+            : buildTextParts(payload)
       }
     ],
     generationConfig: {
@@ -511,7 +588,8 @@ function extractTextResponse(data: unknown): string {
 }
 
 async function generateStudyMaterialsWithGemini(payload: StudyGenerationInput): Promise<GenerateStudySetResponse> {
-  const { apiKey, model } = getGeminiConfig(payload.sourceType === "pdf" ? "multimodal" : "text");
+  const shouldUseMultimodalPdfPath = payload.sourceType === "pdf" && !payload.extractedText?.trim();
+  const { apiKey, model } = getGeminiConfig(shouldUseMultimodalPdfPath ? "multimodal" : "text");
   const data = await fetchGeminiJson<unknown>({
     url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     body: buildRequestBody(payload),
@@ -538,7 +616,7 @@ export async function generateStudyMaterials(payload: StudyGenerationInput): Pro
   return generateStudyMaterialsWithGemini(payload);
 }
 
-async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnInput): Promise<EvaluateExamTurnResponse> {
+async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnInput): Promise<ExamEvaluationOutcome> {
   const { apiKey, model } = getGeminiConfig("exam");
   const data = await fetchGeminiJson<unknown>({
     url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -623,7 +701,7 @@ async function evaluateExamTurnWithGemini(payload: EvaluateExamTurnInput): Promi
   };
 }
 
-export async function evaluateExamTurn(payload: EvaluateExamTurnInput): Promise<EvaluateExamTurnResponse> {
+export async function evaluateExamTurn(payload: EvaluateExamTurnInput): Promise<ExamEvaluationOutcome> {
   return evaluateExamTurnWithGemini(payload);
 }
 

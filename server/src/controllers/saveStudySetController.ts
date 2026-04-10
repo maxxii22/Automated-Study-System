@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { logError } from "../lib/logger.js";
 import { createStudySet } from "../services/studySetRepository.js";
 import { indexStudySetForSemanticCache } from "../services/studySetSemanticIndexService.js";
 
@@ -46,8 +47,13 @@ export async function saveStudySetController(request: Request, response: Respons
     }
   });
 
-  await indexStudySetForSemanticCache(created, {
+  void indexStudySetForSemanticCache(created, {
     ownerId: request.authUser!.id
+  }).catch((error) => {
+    logError("Study set semantic indexing failed after save", {
+      studySetId: created.id,
+      error: error instanceof Error ? error.message : "Unknown semantic indexing error"
+    });
   });
 
   return response.status(201).json(created);
