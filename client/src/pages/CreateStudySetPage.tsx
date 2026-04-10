@@ -281,6 +281,7 @@ export function CreateStudySetPage() {
   const canRetryGeneration =
     !isSubmitting &&
     ((sourceType === "text" && lastTextPayloadRef.current !== null) || (sourceType === "pdf" && sourceFile !== null && lastPdfTitleRef.current));
+  const formattedSourceFileTitle = sourceFile ? formatPdfTitle(sourceFile.name) : "";
 
   useEffect(() => {
     if (showMobilePreviewFirst) {
@@ -679,9 +680,31 @@ export function CreateStudySetPage() {
           <div className="space-y-4">
             <button className="flex w-full flex-col items-center justify-center gap-3 rounded-[1.7rem] border border-dashed border-white/14 bg-white/[0.04] px-6 py-10 text-center transition hover:border-white/20 hover:bg-white/[0.06]" onClick={() => pdfInputRef.current?.click()} type="button">
               <span className="inline-flex size-14 items-center justify-center rounded-3xl border border-white/10 bg-white/[0.06] text-amber-200"><UploadCloud className="size-6" /></span>
-              <div className="space-y-2"><p className="text-lg font-semibold text-white">{sourceFile ? "Choose a different PDF" : "Click to choose your PDF"}</p><p className="text-sm leading-7 text-zinc-400">{sourceFile ? sourceFile.name : "Lecture notes, handouts, and textbook sections up to 10 MB."}</p></div>
+              <div className="w-full space-y-2">
+                <p className="text-lg font-semibold text-white">{sourceFile ? "Choose a different PDF" : "Click to choose your PDF"}</p>
+                {sourceFile ? (
+                  <div className="space-y-1">
+                    <p className="break-words font-medium leading-7 text-zinc-200 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+                      {formattedSourceFileTitle}
+                    </p>
+                    <p className="break-all text-xs leading-6 text-zinc-500 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+                      {sourceFile.name}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm leading-7 text-zinc-400">Lecture notes, handouts, and textbook sections up to 10 MB.</p>
+                )}
+              </div>
             </button>
-            {sourceFile ? <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Ready</p><p className="mt-2 text-sm font-semibold text-white">PDF title: {formatPdfTitle(sourceFile.name)}</p><p className="mt-1 text-sm leading-7 text-zinc-400">This document is uploaded and ready for generation.</p></div> : null}
+            {sourceFile ? (
+              <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">Ready</p>
+                <p className="mt-2 break-words text-sm font-semibold leading-6 text-white [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+                  PDF title: {formattedSourceFileTitle}
+                </p>
+                <p className="mt-1 text-sm leading-7 text-zinc-400">This document is uploaded and ready for generation.</p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="border-t-0 bg-transparent p-0 pt-2 sm:justify-between">
             <Button className="h-11 rounded-full border border-white/10 bg-white/[0.05] px-5 text-zinc-100 hover:bg-white/[0.08]" onClick={() => setIsPdfModalOpen(false)} type="button" variant="ghost">Cancel</Button>

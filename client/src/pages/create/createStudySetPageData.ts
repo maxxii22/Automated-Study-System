@@ -100,14 +100,23 @@ export function toUserFacingGenerationError(message: string | null | undefined) 
 }
 
 export function formatPdfTitle(fileName: string) {
-  return fileName
+  const cleanedTitle = fileName
     .replace(/\.pdf$/i, "")
     .replace(/^.*?(?=[A-Za-z])/, "")
     .replace(/\b(?:oceanofpdf\.com|oceanofpdf|www)\b/gi, "")
+    .replace(/\bcom\b/gi, "")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^\)]*\)/g, " ")
     .replace(/[_-]+/g, " ")
+    .replace(/\s*\.\s*/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 70);
+    .trim();
+
+  if (!cleanedTitle) {
+    return "Uploaded PDF";
+  }
+
+  return cleanedTitle.slice(0, 72).trim();
 }
 
 export function deriveTitleFromContent(title: string, sourceUrl: string, sourceText: string, sourceFile: File | null) {
